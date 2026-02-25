@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import {
   DndContext,
-  pointerWithin,
+  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
@@ -385,13 +385,16 @@ function ColumnDropZone({
   column,
   onUpdateElement,
   onDeleteElement,
+  onAddElement,
   highlighted,
 }: {
   column: LayoutColumn;
   onUpdateElement: (id: string, el: LayoutElement) => void;
   onDeleteElement: (id: string) => void;
+  onAddElement: (type: ElementType) => void;
   highlighted: boolean;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
     data: { type: "column", columnId: column.id },
@@ -412,7 +415,6 @@ function ColumnDropZone({
             : "border-emerald-100/40 bg-emerald-50/10"
       )}
     >
-      {/* elements */}
       <SortableContext
         items={column.elements.map((e) => e.id)}
         strategy={verticalListSortingStrategy}
@@ -429,22 +431,47 @@ function ColumnDropZone({
         </div>
       </SortableContext>
 
-      {/* drop indicator */}
+      {/* click-to-add zone */}
       <div
         className={cn(
-          "flex items-center justify-center rounded-md mx-1.5 mb-1.5 transition-all",
-          empty ? "flex-1 min-h-[40px]" : "min-h-[20px]",
-          lit && "bg-emerald-200/50"
+          "flex items-center justify-center rounded-md mx-1.5 mb-1.5 transition-all cursor-pointer",
+          empty ? "flex-1 min-h-[40px]" : "min-h-[24px]",
+          lit
+            ? "bg-emerald-200/50"
+            : "hover:bg-emerald-100/40"
         )}
+        onClick={() => setMenuOpen((v) => !v)}
       >
-        <span
-          className={cn(
-            "text-[10px] select-none",
-            lit ? "text-emerald-600 font-medium" : "text-emerald-300/80"
-          )}
-        >
-          {lit ? "↓ Soltar aqui" : "+"}
-        </span>
+        {!menuOpen && (
+          <span
+            className={cn(
+              "text-[10px] select-none",
+              lit ? "text-emerald-600 font-medium" : "text-emerald-300/80"
+            )}
+          >
+            {lit ? "↓ Soltar aqui" : "+"}
+          </span>
+        )}
+        {menuOpen && (
+          <div className="flex flex-wrap items-center justify-center gap-1 py-1">
+            {PALETTE.map(({ type, label, Icon }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddElement(type);
+                  setMenuOpen(false);
+                }}
+                className="flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
+                title={label}
+              >
+                <Icon className="size-3" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -465,6 +492,7 @@ function RowComponent({
   row,
   onUpdateElement,
   onDeleteElement,
+  onAddElement,
   onDeleteRow,
   onSetColumns,
   overColumnId,
@@ -472,6 +500,7 @@ function RowComponent({
   row: LayoutRow;
   onUpdateElement: (id: string, el: LayoutElement) => void;
   onDeleteElement: (id: string) => void;
+  onAddElement: (columnId: string, type: ElementType) => void;
   onDeleteRow: () => void;
   onSetColumns: (count: ColumnCount) => void;
   overColumnId: string | null;
@@ -520,6 +549,7 @@ function RowComponent({
             column={col}
             onUpdateElement={onUpdateElement}
             onDeleteElement={onDeleteElement}
+            onAddElement={(type) => onAddElement(col.id, type)}
             highlighted={overColumnId === col.id}
           />
         ))}
@@ -575,7 +605,7 @@ export function PageBuilder() {
   const [overColId, setOverColId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } })
   );
 
   const elToCol = useMemo(() => buildElementToColumn(layout), [layout]);
@@ -665,6 +695,15 @@ export function PageBuilder() {
     setLayout((prev) => removeElementById(prev, id).layout);
   }, []);
 
+  const handleAddElement = useCallback(
+    (columnId: string, type: ElementType) => {
+      setLayout((prev) =>
+        addElementToColumn(prev, columnId, createElement(type))
+      );
+    },
+    []
+  );
+
   /* ---- overlay --------------------------------------------------- */
 
   const activePaletteType = activeId?.startsWith("palette-")
@@ -677,7 +716,7 @@ export function PageBuilder() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={closestCenter}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -738,6 +777,7 @@ export function PageBuilder() {
                   row={row}
                   onUpdateElement={handleUpdateElement}
                   onDeleteElement={handleDeleteElement}
+                  onAddElement={handleAddElement}
                   onDeleteRow={() => handleDeleteRow(row.id)}
                   onSetColumns={(count) => handleSetColumns(row.id, count)}
                   overColumnId={overColId}
