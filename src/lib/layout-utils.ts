@@ -106,7 +106,7 @@ export function setRowColumns(
 
   if (count > old.length) {
     while (row.columns.length < count) {
-      row.columns.push({ id: createId("col"), elements: [] });
+      row.columns.push({ id: createId("col"), weight: 1, elements: [] });
     }
   } else if (count < old.length) {
     const excess = old.splice(count);
@@ -116,6 +116,19 @@ export function setRowColumns(
     }
   }
 
+  return next;
+}
+
+export function setColumnWeight(
+  layout: PageLayout,
+  rowId: string,
+  colIndex: number,
+  newWeight: number
+): PageLayout {
+  const next = clone(layout);
+  const row = next.rows.find((r) => r.id === rowId);
+  if (!row || colIndex < 0 || colIndex >= row.columns.length) return layout;
+  row.columns[colIndex].weight = Math.max(0.5, Math.min(4, newWeight));
   return next;
 }
 

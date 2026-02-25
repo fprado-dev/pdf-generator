@@ -9,17 +9,24 @@ export type ElementType =
   | "tabela";
 
 export type ColumnCount = 1 | 2 | 3 | 4;
+export type TextAlign = "left" | "center" | "right";
+export type ImageWidth = 25 | 33 | 50 | 66 | 75 | 100;
 
 export interface LayoutElement {
   id: string;
   type: ElementType;
   content: string;
+  align?: TextAlign;
+  imageWidth?: ImageWidth;
   imageParams?: ImageBlockParams;
   tableData?: string[][];
 }
 
 export interface LayoutColumn {
   id: string;
+  /** Relative width weight (default 1). For a row with two columns of
+   *  weights [1, 2], the first column is 1/3 and the second is 2/3. */
+  weight: number;
   elements: LayoutElement[];
 }
 
@@ -47,7 +54,11 @@ export function createId(prefix: string): string {
 
 export function createElement(type: ElementType): LayoutElement {
   const id = createId("el");
-  const base: LayoutElement = { id, type, content: "" };
+  const base: LayoutElement = { id, type, content: "", align: "left" };
+
+  if (type === "titulo" || type === "subtitulo") {
+    base.align = "left";
+  }
 
   if (type === "imagem") {
     base.imageParams = {
@@ -57,6 +68,7 @@ export function createElement(type: ElementType): LayoutElement {
       position: "center",
       size: "medium",
     };
+    base.imageWidth = 100;
   }
   if (type === "tabela") {
     base.tableData = [
@@ -68,15 +80,15 @@ export function createElement(type: ElementType): LayoutElement {
   return base;
 }
 
-function createColumn(): LayoutColumn {
-  return { id: createId("col"), elements: [] };
+function createColumn(weight = 1): LayoutColumn {
+  return { id: createId("col"), weight, elements: [] };
 }
 
 export function createRow(colCount: ColumnCount = 1): LayoutRow {
   return {
     id: createId("row"),
     columnCount: colCount,
-    columns: Array.from({ length: colCount }, () => createColumn()),
+    columns: Array.from({ length: colCount }, () => createColumn(1)),
   };
 }
 

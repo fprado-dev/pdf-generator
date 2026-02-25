@@ -27,6 +27,8 @@ import type {
   LayoutRow,
   PageLayout,
   ColumnCount,
+  TextAlign,
+  ImageWidth,
 } from "@/lib/layout-types";
 import { createElement, createEmptyLayout } from "@/lib/layout-types";
 import {
@@ -36,6 +38,7 @@ import {
   addRow,
   removeRow,
   setRowColumns,
+  setColumnWeight,
   addElementToColumn,
   removeElementById,
   updateElementById,
@@ -49,8 +52,10 @@ import {
   Heading1,
   Heading2,
   AlignLeft,
+  AlignCenter,
+  AlignRight,
   ImageIcon,
-  Minus,
+  Minus as MinusIcon,
   Table,
   Trash2,
   ImagePlus,
@@ -61,6 +66,11 @@ import {
   Columns4,
   Square,
   Download,
+  Bold,
+  Italic,
+  Underline,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 const IMG_ACCEPT = [
@@ -71,6 +81,8 @@ const IMG_ACCEPT = [
   "image/webp",
 ];
 
+const IMG_WIDTHS: ImageWidth[] = [25, 33, 50, 66, 75, 100];
+
 /* ================================================================== */
 /*  Palette                                                           */
 /* ================================================================== */
@@ -80,7 +92,7 @@ const PALETTE = [
   { type: "subtitulo" as const, label: "Subtítulo", Icon: Heading2 },
   { type: "texto" as const, label: "Texto", Icon: AlignLeft },
   { type: "imagem" as const, label: "Imagem", Icon: ImageIcon },
-  { type: "separador" as const, label: "Separador", Icon: Minus },
+  { type: "separador" as const, label: "Separador", Icon: MinusIcon },
   { type: "tabela" as const, label: "Tabela", Icon: Table },
 ];
 
@@ -117,6 +129,95 @@ function PaletteItem({
 }
 
 /* ================================================================== */
+/*  Alignment toolbar (for titulo/subtitulo)                          */
+/* ================================================================== */
+
+function AlignBar({
+  value,
+  onChange,
+}: {
+  value: TextAlign;
+  onChange: (a: TextAlign) => void;
+}) {
+  const opts: { align: TextAlign; Icon: React.ComponentType<{ className?: string }> }[] = [
+    { align: "left", Icon: AlignLeft },
+    { align: "center", Icon: AlignCenter },
+    { align: "right", Icon: AlignRight },
+  ];
+  return (
+    <div data-edit-chrome className="flex items-center gap-0.5 mb-1">
+      {opts.map(({ align, Icon }) => (
+        <button
+          key={align}
+          type="button"
+          onClick={() => onChange(align)}
+          className={cn(
+            "p-0.5 rounded transition-colors",
+            value === align
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground"
+          )}
+        >
+          <Icon className="size-3" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Rich text toolbar (for texto — wraps selected text with markers)  */
+/* ================================================================== */
+
+function RichTextToolbar({
+  textRef,
+  element,
+  onUpdate,
+}: {
+  textRef: React.RefObject<HTMLDivElement | null>;
+  element: LayoutElement;
+  onUpdate: (el: LayoutElement) => void;
+}) {
+  const exec = (cmd: string) => {
+    document.execCommand(cmd, false);
+    if (textRef.current) {
+      onUpdate({ ...element, content: textRef.current.innerHTML });
+    }
+  };
+
+  return (
+    <div data-edit-chrome className="flex items-center gap-0.5 mb-1">
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <Bold className="size-3" />
+      </button>
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <Italic className="size-3" />
+      </button>
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <Underline className="size-3" />
+      </button>
+      {/* alignment */}
+      <span className="w-px h-3 bg-border mx-0.5" />
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <AlignLeft className="size-3" />
+      </button>
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <AlignCenter className="size-3" />
+      </button>
+      <button type="button" onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}
+        className="p-0.5 rounded text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground">
+        <AlignRight className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  Sortable element                                                  */
 /* ================================================================== */
 
@@ -144,6 +245,7 @@ function SortableElement({
   };
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const richRef = useRef<HTMLDivElement>(null);
 
   const handleFile = useCallback(
     (file: File) => {
@@ -193,6 +295,13 @@ function SortableElement({
     onUpdate({ ...element, tableData: next });
   };
 
+  const alignClass =
+    element.align === "center"
+      ? "text-center"
+      : element.align === "right"
+        ? "text-right"
+        : "text-left";
+
   return (
     <div
       ref={setNodeRef}
@@ -213,66 +322,112 @@ function SortableElement({
         >
           <GripVertical className="size-3 text-muted-foreground" />
         </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="p-0.5 rounded hover:bg-destructive/10"
-        >
+        <button type="button" onClick={onDelete} className="p-0.5 rounded hover:bg-destructive/10">
           <Trash2 className="size-3 text-muted-foreground hover:text-destructive" />
         </button>
       </div>
 
-      {/* ---- content by type ---- */}
-
+      {/* ---- titulo ---- */}
       {element.type === "titulo" && (
-        <input
-          value={element.content}
-          onChange={(e) => onUpdate({ ...element, content: e.target.value })}
-          placeholder="Título..."
-          className="w-full bg-transparent border-0 outline-none text-base font-bold placeholder:text-muted-foreground/40"
-        />
+        <div>
+          <AlignBar
+            value={element.align ?? "left"}
+            onChange={(a) => onUpdate({ ...element, align: a })}
+          />
+          <input
+            value={element.content}
+            onChange={(e) => onUpdate({ ...element, content: e.target.value })}
+            placeholder="Título..."
+            className={cn(
+              "w-full bg-transparent border-0 outline-none text-base font-bold placeholder:text-muted-foreground/40",
+              alignClass
+            )}
+          />
+        </div>
       )}
 
+      {/* ---- subtitulo ---- */}
       {element.type === "subtitulo" && (
-        <input
-          value={element.content}
-          onChange={(e) => onUpdate({ ...element, content: e.target.value })}
-          placeholder="Subtítulo..."
-          className="w-full bg-transparent border-0 outline-none text-sm font-semibold placeholder:text-muted-foreground/40"
-        />
+        <div>
+          <AlignBar
+            value={element.align ?? "left"}
+            onChange={(a) => onUpdate({ ...element, align: a })}
+          />
+          <input
+            value={element.content}
+            onChange={(e) => onUpdate({ ...element, content: e.target.value })}
+            placeholder="Subtítulo..."
+            className={cn(
+              "w-full bg-transparent border-0 outline-none text-sm font-semibold placeholder:text-muted-foreground/40",
+              alignClass
+            )}
+          />
+        </div>
       )}
 
+      {/* ---- texto (contentEditable with rich formatting) ---- */}
       {element.type === "texto" && (
-        <textarea
-          value={element.content}
-          onChange={(e) => onUpdate({ ...element, content: e.target.value })}
-          placeholder="Texto..."
-          className="w-full bg-transparent border-0 outline-none text-xs resize-y min-h-[28px] placeholder:text-muted-foreground/40"
-          rows={2}
-        />
+        <div>
+          <RichTextToolbar textRef={richRef} element={element} onUpdate={onUpdate} />
+          <div
+            ref={richRef}
+            contentEditable
+            suppressContentEditableWarning
+            dangerouslySetInnerHTML={{ __html: element.content }}
+            onBlur={() => {
+              if (richRef.current) {
+                onUpdate({ ...element, content: richRef.current.innerHTML });
+              }
+            }}
+            data-placeholder="Texto..."
+            className="w-full bg-transparent border-0 outline-none text-xs min-h-[28px] empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/40"
+          />
+        </div>
       )}
 
+      {/* ---- separador ---- */}
       {element.type === "separador" && (
         <hr className="border-t-2 border-border my-1" />
       )}
 
+      {/* ---- imagem ---- */}
       {element.type === "imagem" && (
         <div className="space-y-1">
           {element.imageParams?.src ? (
-            <div className="rounded overflow-hidden bg-muted/20 border border-border/40">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={element.imageParams.src}
-                alt={element.imageParams.alt ?? ""}
-                className="max-h-[120px] w-full object-contain"
-              />
-            </div>
+            <>
+              <div
+                className="mx-auto rounded overflow-hidden bg-muted/20 border border-border/40"
+                style={{ width: `${element.imageWidth ?? 100}%` }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={element.imageParams.src}
+                  alt={element.imageParams.alt ?? ""}
+                  className="w-full object-contain"
+                />
+              </div>
+              {/* image resize bar */}
+              <div data-edit-chrome className="flex items-center justify-center gap-0.5">
+                {IMG_WIDTHS.map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => onUpdate({ ...element, imageWidth: w })}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded text-[9px] transition-colors",
+                      (element.imageWidth ?? 100) === w
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground"
+                    )}
+                  >
+                    {w}%
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -285,9 +440,7 @@ function SortableElement({
               className="flex flex-col items-center gap-1 rounded border border-dashed border-border p-4 cursor-pointer hover:border-primary/40 hover:bg-accent/20 transition-colors"
             >
               <ImagePlus className="size-5 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">
-                Clique ou arraste
-              </span>
+              <span className="text-[10px] text-muted-foreground">Clique ou arraste</span>
               <input
                 ref={fileRef}
                 type="file"
@@ -306,10 +459,7 @@ function SortableElement({
               onChange={(e) =>
                 onUpdate({
                   ...element,
-                  imageParams: {
-                    ...element.imageParams!,
-                    legenda: e.target.value,
-                  },
+                  imageParams: { ...element.imageParams!, legenda: e.target.value },
                 })
               }
               placeholder="Legenda..."
@@ -319,6 +469,7 @@ function SortableElement({
         </div>
       )}
 
+      {/* ---- tabela ---- */}
       {element.type === "tabela" && element.tableData && (
         <div className="space-y-1">
           <div className="overflow-x-auto">
@@ -326,10 +477,7 @@ function SortableElement({
               <thead>
                 <tr>
                   {element.tableData[0]?.map((cell, ci) => (
-                    <th
-                      key={ci}
-                      className="border border-border/60 p-1 bg-muted/40 font-medium"
-                    >
+                    <th key={ci} className="border border-border/60 p-1 bg-muted/40 font-medium">
                       <input
                         value={cell}
                         onChange={(e) => updateCell(0, ci, e.target.value)}
@@ -346,9 +494,7 @@ function SortableElement({
                       <td key={ci} className="border border-border/60 p-1">
                         <input
                           value={cell}
-                          onChange={(e) =>
-                            updateCell(ri + 1, ci, e.target.value)
-                          }
+                          onChange={(e) => updateCell(ri + 1, ci, e.target.value)}
                           className="w-full bg-transparent border-0 outline-none"
                         />
                       </td>
@@ -358,21 +504,9 @@ function SortableElement({
               </tbody>
             </table>
           </div>
-          <div className="flex gap-1 justify-end">
-            <button
-              type="button"
-              onClick={addTableRow}
-              className="text-[9px] text-muted-foreground hover:text-foreground px-1"
-            >
-              + linha
-            </button>
-            <button
-              type="button"
-              onClick={addTableCol}
-              className="text-[9px] text-muted-foreground hover:text-foreground px-1"
-            >
-              + coluna
-            </button>
+          <div data-edit-chrome className="flex gap-1 justify-end">
+            <button type="button" onClick={addTableRow} className="text-[9px] text-muted-foreground hover:text-foreground px-1">+ linha</button>
+            <button type="button" onClick={addTableCol} className="text-[9px] text-muted-foreground hover:text-foreground px-1">+ coluna</button>
           </div>
         </div>
       )}
@@ -418,10 +552,7 @@ function ColumnDropZone({
             : "border-emerald-100/40 bg-emerald-50/10"
       )}
     >
-      <SortableContext
-        items={column.elements.map((e) => e.id)}
-        strategy={verticalListSortingStrategy}
-      >
+      <SortableContext items={column.elements.map((e) => e.id)} strategy={verticalListSortingStrategy}>
         <div className="flex-1 p-1.5 space-y-0.5">
           {column.elements.map((el) => (
             <SortableElement
@@ -434,25 +565,17 @@ function ColumnDropZone({
         </div>
       </SortableContext>
 
-      {/* click-to-add zone */}
       <div
         data-edit-chrome
         className={cn(
           "flex items-center justify-center rounded-md mx-1.5 mb-1.5 transition-all cursor-pointer",
           empty ? "flex-1 min-h-[40px]" : "min-h-[24px]",
-          lit
-            ? "bg-emerald-200/50"
-            : "hover:bg-emerald-100/40"
+          lit ? "bg-emerald-200/50" : "hover:bg-emerald-100/40"
         )}
         onClick={() => setMenuOpen((v) => !v)}
       >
         {!menuOpen && (
-          <span
-            className={cn(
-              "text-[10px] select-none",
-              lit ? "text-emerald-600 font-medium" : "text-emerald-300/80"
-            )}
-          >
+          <span className={cn("text-[10px] select-none", lit ? "text-emerald-600 font-medium" : "text-emerald-300/80")}>
             {lit ? "↓ Soltar aqui" : "+"}
           </span>
         )}
@@ -462,11 +585,7 @@ function ColumnDropZone({
               <button
                 key={type}
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddElement(type);
-                  setMenuOpen(false);
-                }}
+                onClick={(e) => { e.stopPropagation(); onAddElement(type); setMenuOpen(false); }}
                 className="flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
                 title={label}
               >
@@ -482,7 +601,7 @@ function ColumnDropZone({
 }
 
 /* ================================================================== */
-/*  Row with column selector                                          */
+/*  Row                                                               */
 /* ================================================================== */
 
 const COL_OPTIONS: { count: ColumnCount; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
@@ -499,6 +618,7 @@ function RowComponent({
   onAddElement,
   onDeleteRow,
   onSetColumns,
+  onResizeColumn,
   overColumnId,
 }: {
   row: LayoutRow;
@@ -507,11 +627,15 @@ function RowComponent({
   onAddElement: (columnId: string, type: ElementType) => void;
   onDeleteRow: () => void;
   onSetColumns: (count: ColumnCount) => void;
+  onResizeColumn: (colIndex: number, delta: number) => void;
   overColumnId: string | null;
 }) {
+  const totalWeight = row.columns.reduce((s, c) => s + c.weight, 0);
+  const gridFr = row.columns.map((c) => `${c.weight}fr`).join(" ");
+
   return (
     <div className="group/row relative rounded-xl border border-border/30 bg-white p-2 transition-all hover:border-border/60">
-      {/* row toolbar — always visible */}
+      {/* row toolbar */}
       <div data-edit-chrome className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1">
           <span className="text-[9px] text-muted-foreground/50 mr-1">Colunas:</span>
@@ -531,23 +655,39 @@ function RowComponent({
               <Icon className="size-3.5" />
             </button>
           ))}
+
+          {/* column weight controls (only when >1 col) */}
+          {row.columnCount > 1 && (
+            <>
+              <span className="w-px h-3 bg-border mx-1" />
+              <span className="text-[9px] text-muted-foreground/50 mr-1">Tamanho:</span>
+              {row.columns.map((col, ci) => (
+                <div key={col.id} className="flex items-center gap-0">
+                  <button type="button" onClick={() => onResizeColumn(ci, -0.5)}
+                    className="p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted">
+                    <ChevronLeft className="size-3" />
+                  </button>
+                  <span className="text-[9px] text-muted-foreground w-5 text-center">
+                    {Math.round((col.weight / totalWeight) * 100)}%
+                  </span>
+                  <button type="button" onClick={() => onResizeColumn(ci, 0.5)}
+                    className="p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted">
+                    <ChevronRight className="size-3" />
+                  </button>
+                  {ci < row.columns.length - 1 && <span className="text-muted-foreground/20 mx-0.5">|</span>}
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={onDeleteRow}
-          className="p-1 rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
-          title="Remover linha"
-        >
+        <button type="button" onClick={onDeleteRow}
+          className="p-1 rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors" title="Remover linha">
           <Trash2 className="size-3.5" />
         </button>
       </div>
 
-      {/* columns grid */}
-      <div
-        className="grid gap-2"
-        style={{ gridTemplateColumns: `repeat(${row.columnCount}, 1fr)` }}
-      >
+      <div className="grid gap-2" style={{ gridTemplateColumns: gridFr }}>
         {row.columns.map((col) => (
           <ColumnDropZone
             key={col.id}
@@ -580,22 +720,14 @@ function PaletteOverlay({ type }: { type: ElementType }) {
 
 function ElementOverlay({ element }: { element: LayoutElement }) {
   const labels: Record<ElementType, string> = {
-    titulo: "Título",
-    subtitulo: "Subtítulo",
-    texto: "Texto",
-    imagem: "Imagem",
-    separador: "Separador",
-    tabela: "Tabela",
+    titulo: "Título", subtitulo: "Subtítulo", texto: "Texto",
+    imagem: "Imagem", separador: "Separador", tabela: "Tabela",
   };
   return (
     <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-lg max-w-[220px]">
       <GripVertical className="size-3.5 text-muted-foreground" />
-      <span className="text-xs text-muted-foreground">
-        {labels[element.type]}
-      </span>
-      {element.content && (
-        <span className="text-sm truncate">{element.content}</span>
-      )}
+      <span className="text-xs text-muted-foreground">{labels[element.type]}</span>
+      {element.content && <span className="text-sm truncate">{element.content}</span>}
     </div>
   );
 }
@@ -627,201 +759,122 @@ export function PageBuilder() {
     [colIds, elToCol]
   );
 
-  /* ---- DnD ------------------------------------------------------- */
+  const handleDragStart = useCallback((e: DragStartEvent) => { setActiveId(String(e.active.id)); }, []);
+  const handleDragOver = useCallback((e: DragOverEvent) => {
+    setOverColId(e.over ? resolveColId(String(e.over.id)) : null);
+  }, [resolveColId]);
 
-  const handleDragStart = useCallback((e: DragStartEvent) => {
-    setActiveId(String(e.active.id));
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    setActiveId(null);
+    setOverColId(null);
+    if (!e.over) return;
+    const aId = String(e.active.id);
+    const oId = String(e.over.id);
+    if (aId.startsWith("palette-")) {
+      const elType = e.active.data.current?.elementType as ElementType;
+      const targetCol = resolveColId(oId);
+      if (!targetCol) return;
+      setLayout((prev) => addElementToColumn(prev, targetCol, createElement(elType)));
+      return;
+    }
+    const srcCol = elToCol[aId];
+    const tgtCol = resolveColId(oId);
+    if (!srcCol || !tgtCol) return;
+    if (srcCol === tgtCol) {
+      if (aId !== oId) setLayout((prev) => reorderInColumn(prev, srcCol, aId, oId));
+    } else {
+      setLayout((prev) => moveElementToColumn(prev, aId, tgtCol));
+    }
+  }, [resolveColId, elToCol]);
+
+  const handleAddRow = useCallback(() => { setLayout((prev) => addRow(prev)); }, []);
+  const handleDeleteRow = useCallback((rowId: string) => { setLayout((prev) => removeRow(prev, rowId)); }, []);
+  const handleSetColumns = useCallback((rowId: string, count: ColumnCount) => {
+    setLayout((prev) => setRowColumns(prev, rowId, count));
   }, []);
-
-  const handleDragOver = useCallback(
-    (e: DragOverEvent) => {
-      if (!e.over) {
-        setOverColId(null);
-        return;
-      }
-      setOverColId(resolveColId(String(e.over.id)));
-    },
-    [resolveColId]
-  );
-
-  const handleDragEnd = useCallback(
-    (e: DragEndEvent) => {
-      setActiveId(null);
-      setOverColId(null);
-      if (!e.over) return;
-
-      const aId = String(e.active.id);
-      const oId = String(e.over.id);
-
-      if (aId.startsWith("palette-")) {
-        const elType = e.active.data.current?.elementType as ElementType;
-        const targetCol = resolveColId(oId);
-        if (!targetCol) return;
-        setLayout((prev) =>
-          addElementToColumn(prev, targetCol, createElement(elType))
-        );
-        return;
-      }
-
-      const srcCol = elToCol[aId];
-      const tgtCol = resolveColId(oId);
-      if (!srcCol || !tgtCol) return;
-
-      if (srcCol === tgtCol) {
-        if (aId !== oId)
-          setLayout((prev) => reorderInColumn(prev, srcCol, aId, oId));
-      } else {
-        setLayout((prev) => moveElementToColumn(prev, aId, tgtCol));
-      }
-    },
-    [resolveColId, elToCol]
-  );
-
-  /* ---- actions --------------------------------------------------- */
-
-  const handleAddRow = useCallback(() => {
-    setLayout((prev) => addRow(prev));
+  const handleResizeColumn = useCallback((rowId: string, colIndex: number, delta: number) => {
+    setLayout((prev) => {
+      const row = prev.rows.find((r) => r.id === rowId);
+      if (!row) return prev;
+      const col = row.columns[colIndex];
+      if (!col) return prev;
+      return setColumnWeight(prev, rowId, colIndex, col.weight + delta);
+    });
   }, []);
-
-  const handleDeleteRow = useCallback((rowId: string) => {
-    setLayout((prev) => removeRow(prev, rowId));
-  }, []);
-
-  const handleSetColumns = useCallback(
-    (rowId: string, count: ColumnCount) => {
-      setLayout((prev) => setRowColumns(prev, rowId, count));
-    },
-    []
-  );
-
   const handleUpdateElement = useCallback((id: string, el: LayoutElement) => {
     setLayout((prev) => updateElementById(prev, id, el));
   }, []);
-
   const handleDeleteElement = useCallback((id: string) => {
     setLayout((prev) => removeElementById(prev, id).layout);
   }, []);
-
-  const handleAddElement = useCallback(
-    (columnId: string, type: ElementType) => {
-      setLayout((prev) =>
-        addElementToColumn(prev, columnId, createElement(type))
-      );
-    },
-    []
-  );
-
-  /* ---- export ----------------------------------------------------- */
+  const handleAddElement = useCallback((columnId: string, type: ElementType) => {
+    setLayout((prev) => addElementToColumn(prev, columnId, createElement(type)));
+  }, []);
 
   const handleExportPDF = useCallback(async () => {
     if (!canvasRef.current || exporting) return;
     setExporting(true);
-    try {
-      await exportToPDF(canvasRef.current, "relatorio.pdf");
-    } finally {
-      setExporting(false);
-    }
+    try { await exportToPDF(canvasRef.current, "relatorio.pdf"); }
+    finally { setExporting(false); }
   }, [exporting]);
 
-  /* ---- overlay --------------------------------------------------- */
-
-  const activePaletteType = activeId?.startsWith("palette-")
-    ? (activeId.replace("palette-", "") as ElementType)
-    : null;
+  const activePaletteType = activeId?.startsWith("palette-") ? (activeId.replace("palette-", "") as ElementType) : null;
   const activeElement = activeId ? allEls[activeId] ?? null : null;
 
-  /* ---- render ---------------------------------------------------- */
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
+    <DndContext sensors={sensors} collisionDetection={closestCenter}
+      onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
       <div className="flex flex-col min-h-screen bg-muted/50">
-        {/* header */}
         <header className="flex items-center justify-between border-b bg-background/95 backdrop-blur-sm px-4 py-2.5 shrink-0">
-          <h1 className="text-base font-medium tracking-tight">
-            PDF Generator
-          </h1>
-          <Button
-            onClick={handleExportPDF}
-            size="sm"
-            variant="outline"
-            disabled={exporting || layout.rows.length === 0}
-          >
+          <h1 className="text-base font-medium tracking-tight">PDF Generator</h1>
+          <Button onClick={handleExportPDF} size="sm" variant="outline"
+            disabled={exporting || layout.rows.length === 0}>
             <Download className="size-4 mr-2" />
             {exporting ? "Gerando..." : "Exportar PDF"}
           </Button>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* sidebar */}
           <aside className="w-[190px] shrink-0 border-r bg-background overflow-y-auto p-3 space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Elementos
-              </p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Elementos</p>
               <div className="space-y-1.5">
                 {PALETTE.map(({ type, label, Icon }) => (
-                  <PaletteItem
-                    key={type}
-                    type={type}
-                    label={label}
-                    Icon={Icon}
-                  />
+                  <PaletteItem key={type} type={type} label={label} Icon={Icon} />
                 ))}
               </div>
             </div>
           </aside>
 
-          {/* canvas */}
           <main className="flex-1 overflow-y-auto p-6">
-            <div
-              ref={canvasRef}
+            <div ref={canvasRef}
               className="mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-6 space-y-3"
-              style={{ width: "210mm", minHeight: "297mm" }}
-            >
+              style={{ width: "210mm", minHeight: "297mm" }}>
               {layout.rows.length === 0 && (
                 <div data-edit-chrome className="flex flex-col items-center justify-center py-24 text-muted-foreground/40">
-                  <p className="text-sm mb-4">
-                    Adicione uma linha para começar
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleAddRow}
-                    className="flex items-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/20 px-6 py-3 text-sm hover:border-primary/40 hover:text-primary transition-colors"
-                  >
-                    <Plus className="size-4" />
-                    Adicionar linha
+                  <p className="text-sm mb-4">Adicione uma linha para começar</p>
+                  <button type="button" onClick={handleAddRow}
+                    className="flex items-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/20 px-6 py-3 text-sm hover:border-primary/40 hover:text-primary transition-colors">
+                    <Plus className="size-4" /> Adicionar linha
                   </button>
                 </div>
               )}
 
               {layout.rows.map((row) => (
-                <RowComponent
-                  key={row.id}
-                  row={row}
+                <RowComponent key={row.id} row={row}
                   onUpdateElement={handleUpdateElement}
                   onDeleteElement={handleDeleteElement}
                   onAddElement={handleAddElement}
                   onDeleteRow={() => handleDeleteRow(row.id)}
                   onSetColumns={(count) => handleSetColumns(row.id, count)}
-                  overColumnId={overColId}
-                />
+                  onResizeColumn={(ci, d) => handleResizeColumn(row.id, ci, d)}
+                  overColumnId={overColId} />
               ))}
 
               {layout.rows.length > 0 && (
-                <button
-                  data-edit-chrome
-                  type="button"
-                  onClick={handleAddRow}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/15 py-3 text-[11px] text-muted-foreground/40 hover:border-primary/30 hover:text-primary/60 transition-colors"
-                >
-                  <Plus className="size-3.5" />
-                  Adicionar linha
+                <button data-edit-chrome type="button" onClick={handleAddRow}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/15 py-3 text-[11px] text-muted-foreground/40 hover:border-primary/30 hover:text-primary/60 transition-colors">
+                  <Plus className="size-3.5" /> Adicionar linha
                 </button>
               )}
             </div>
@@ -830,11 +883,8 @@ export function PageBuilder() {
       </div>
 
       <DragOverlay>
-        {activePaletteType ? (
-          <PaletteOverlay type={activePaletteType} />
-        ) : activeElement ? (
-          <ElementOverlay element={activeElement} />
-        ) : null}
+        {activePaletteType ? <PaletteOverlay type={activePaletteType} /> :
+          activeElement ? <ElementOverlay element={activeElement} /> : null}
       </DragOverlay>
     </DndContext>
   );

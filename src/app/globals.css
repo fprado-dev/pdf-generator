@@ -137,7 +137,11 @@
 }
 .export-mode .group\/row {
   border: none !important;
-  padding: 4px 0 !important;
+  padding: 2px 0 !important;
+}
+.export-mode .group\/el {
+  border: none !important;
+  padding: 2px 0 !important;
 }
 .export-mode input,
 .export-mode textarea {
@@ -152,12 +156,26 @@
   height: auto !important;
   min-height: 0 !important;
 }
+.export-mode [contenteditable] {
+  outline: none !important;
+  min-height: auto !important;
+}
 .export-mode hr {
-  margin: 8px 0 !important;
+  margin: 6px 0 !important;
+  border-color: #d1d5db !important;
 }
 .export-mode table {
   border-collapse: collapse !important;
 }
 .export-mode table input {
   text-align: inherit !important;
+}
+.export-mode .rounded-xl {
+  border-radius: 0 !important;
+}
+.export-mode .rounded-lg {
+  border-radius: 0 !important;
+}
+.export-mode .space-y-3 > * + * {
+  margin-top: 4px !important;
 }
