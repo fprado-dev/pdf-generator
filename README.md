@@ -51,7 +51,14 @@ npm install
 npm run dev
 ```
 
-Acesse [http://localhost:3000](http://localhost:3000).
+Acesse **http://localhost:3000** no navegador.
+
+### No Cursor / Ambiente Remoto
+
+1. Rode `npm run dev` no terminal
+2. Abra o painel **Ports** (View → Portas) na barra inferior
+3. Clique no ícone de globo na linha da porta 3000 (ou 3001) para abrir no navegador
+4. Ou use **Simple Browser** (Ctrl+Shift+P → "Simple Browser") e digite `http://localhost:3000`
 
 ## Build
 
