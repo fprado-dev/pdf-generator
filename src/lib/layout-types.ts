@@ -8,20 +8,25 @@ export type ElementType =
   | "separador"
   | "tabela";
 
-export type ElementSpan = 1 | 2 | 3 | 4;
+export type SpanSize = 1 | 2 | 3 | 4;
 
 export interface LayoutElement {
   id: string;
   type: ElementType;
   content: string;
-  span: ElementSpan;
   imageParams?: ImageBlockParams;
   tableData?: string[][];
 }
 
+export interface LayoutColumn {
+  id: string;
+  span: SpanSize;
+  elements: LayoutElement[];
+}
+
 export interface LayoutRow {
   id: string;
-  elements: LayoutElement[];
+  columns: LayoutColumn[];
 }
 
 export type SectionType = "topo" | "corpo" | "rodape";
@@ -36,7 +41,7 @@ export interface PageLayout {
   sections: LayoutSection[];
 }
 
-/* ---- helpers ----------------------------------------------------- */
+/* ---- id helper --------------------------------------------------- */
 
 let _seq = 0;
 function uid(): string {
@@ -46,31 +51,11 @@ export function createId(prefix: string): string {
   return `${prefix}_${uid()}`;
 }
 
-export function rowUsed(row: LayoutRow): number {
-  return row.elements.reduce((s, e) => s + e.span, 0);
-}
-export function rowRemaining(row: LayoutRow): number {
-  return Math.max(0, 4 - rowUsed(row));
-}
+/* ---- factories --------------------------------------------------- */
 
-/* ---- default spans per type -------------------------------------- */
-
-const DEFAULT_SPAN: Record<ElementType, ElementSpan> = {
-  titulo: 4,
-  subtitulo: 4,
-  texto: 2,
-  imagem: 1,
-  separador: 4,
-  tabela: 2,
-};
-
-/* ---- factory ----------------------------------------------------- */
-
-export function createElement(type: ElementType, maxSpan?: number): LayoutElement {
+export function createElement(type: ElementType): LayoutElement {
   const id = createId("el");
-  const span = Math.min(DEFAULT_SPAN[type], maxSpan ?? 4) as ElementSpan;
-
-  const base: LayoutElement = { id, type, content: "", span };
+  const base: LayoutElement = { id, type, content: "" };
 
   if (type === "imagem") {
     base.imageParams = {
@@ -81,7 +66,6 @@ export function createElement(type: ElementType, maxSpan?: number): LayoutElemen
       size: "medium",
     };
   }
-
   if (type === "tabela") {
     base.tableData = [
       ["Coluna 1", "Coluna 2"],
@@ -89,20 +73,41 @@ export function createElement(type: ElementType, maxSpan?: number): LayoutElemen
       ["", ""],
     ];
   }
-
   return base;
 }
 
-export function createRow(): LayoutRow {
-  return { id: createId("row"), elements: [] };
+export function createColumn(span: SpanSize): LayoutColumn {
+  return { id: createId("col"), span, elements: [] };
+}
+
+export function createRow(spans: SpanSize[]): LayoutRow {
+  return {
+    id: createId("row"),
+    columns: spans.map((s) => createColumn(s)),
+  };
 }
 
 export function createDefaultLayout(): PageLayout {
   return {
     sections: [
-      { type: "topo", label: "Topo", rows: [createRow()] },
-      { type: "corpo", label: "Corpo", rows: [createRow()] },
-      { type: "rodape", label: "Rodapé", rows: [createRow()] },
+      { type: "topo", label: "Topo", rows: [createRow([4])] },
+      { type: "corpo", label: "Corpo", rows: [createRow([4])] },
+      { type: "rodape", label: "Rodapé", rows: [createRow([4])] },
     ],
   };
 }
+
+/* ---- column presets ---------------------------------------------- */
+
+export interface ColumnPreset {
+  label: string;
+  spans: SpanSize[];
+}
+
+export const COLUMN_PRESETS: ColumnPreset[] = [
+  { label: "2 colunas", spans: [2, 2] },
+  { label: "⅓ + ⅔", spans: [1, 3] },
+  { label: "⅔ + ⅓", spans: [3, 1] },
+  { label: "3 colunas", spans: [1, 1, 2] },
+  { label: "4 colunas", spans: [1, 1, 1, 1] },
+];

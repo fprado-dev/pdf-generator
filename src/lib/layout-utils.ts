@@ -2,9 +2,9 @@ import type {
   PageLayout,
   LayoutElement,
   SectionType,
-  ElementSpan,
+  SpanSize,
 } from "./layout-types";
-import { rowRemaining, createRow } from "./layout-types";
+import { createRow } from "./layout-types";
 import type { ReportFrontMatter } from "./types";
 
 /* ================================================================== */
@@ -30,44 +30,46 @@ export function layoutToMarkdown(
 
   for (const section of layout.sections) {
     for (const row of section.rows) {
-      for (const el of row.elements) {
-        switch (el.type) {
-          case "titulo":
-            if (el.content) out += `# ${el.content}\n\n`;
-            break;
-          case "subtitulo":
-            if (el.content) out += `## ${el.content}\n\n`;
-            break;
-          case "texto":
-            if (el.content) out += `${el.content}\n\n`;
-            break;
-          case "separador":
-            out += "---\n\n";
-            break;
-          case "tabela":
-            if (el.tableData && el.tableData.length > 0) {
-              const hdr = el.tableData[0];
-              out += `| ${hdr.join(" | ")} |\n`;
-              out += `| ${hdr.map(() => "---").join(" | ")} |\n`;
-              for (let r = 1; r < el.tableData.length; r++) {
-                out += `| ${el.tableData[r].join(" | ")} |\n`;
+      for (const col of row.columns) {
+        for (const el of col.elements) {
+          switch (el.type) {
+            case "titulo":
+              if (el.content) out += `# ${el.content}\n\n`;
+              break;
+            case "subtitulo":
+              if (el.content) out += `## ${el.content}\n\n`;
+              break;
+            case "texto":
+              if (el.content) out += `${el.content}\n\n`;
+              break;
+            case "separador":
+              out += "---\n\n";
+              break;
+            case "tabela":
+              if (el.tableData && el.tableData.length > 0) {
+                const hdr = el.tableData[0];
+                out += `| ${hdr.join(" | ")} |\n`;
+                out += `| ${hdr.map(() => "---").join(" | ")} |\n`;
+                for (let r = 1; r < el.tableData.length; r++) {
+                  out += `| ${el.tableData[r].join(" | ")} |\n`;
+                }
+                out += "\n";
               }
-              out += "\n";
-            }
-            break;
-          case "imagem":
-            if (el.imageParams) {
-              const img = { ...el.imageParams, order: imgOrder++ };
-              const lines: string[] = [];
-              if (img.src) lines.push(`src: ${img.src}`);
-              if (img.alt) lines.push(`alt: ${img.alt}`);
-              if (img.legenda) lines.push(`legenda: ${img.legenda}`);
-              if (img.position) lines.push(`position: ${img.position}`);
-              if (img.size) lines.push(`size: ${img.size}`);
-              lines.push(`order: ${img.order}`);
-              out += `:::imagem\n${lines.join("\n")}\n:::\n\n`;
-            }
-            break;
+              break;
+            case "imagem":
+              if (el.imageParams) {
+                const img = { ...el.imageParams, order: imgOrder++ };
+                const lines: string[] = [];
+                if (img.src) lines.push(`src: ${img.src}`);
+                if (img.alt) lines.push(`alt: ${img.alt}`);
+                if (img.legenda) lines.push(`legenda: ${img.legenda}`);
+                if (img.position) lines.push(`position: ${img.position}`);
+                if (img.size) lines.push(`size: ${img.size}`);
+                lines.push(`order: ${img.order}`);
+                out += `:::imagem\n${lines.join("\n")}\n:::\n\n`;
+              }
+              break;
+          }
         }
       }
     }
@@ -77,80 +79,107 @@ export function layoutToMarkdown(
 }
 
 /* ================================================================== */
-/*  Immutable layout helpers                                          */
+/*  Immutable helpers                                                 */
 /* ================================================================== */
 
 function clone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
-/* ---- find -------------------------------------------------------- */
+/* ---- lookups ----------------------------------------------------- */
+
+export function findColumn(
+  layout: PageLayout,
+  columnId: string
+): { si: number; ri: number; ci: number } | null {
+  for (let si = 0; si < layout.sections.length; si++)
+    for (let ri = 0; ri < layout.sections[si].rows.length; ri++) {
+      const ci = layout.sections[si].rows[ri].columns.findIndex(
+        (c) => c.id === columnId
+      );
+      if (ci >= 0) return { si, ri, ci };
+    }
+  return null;
+}
 
 export function findElement(
   layout: PageLayout,
   elementId: string
-): { sectionIdx: number; rowIdx: number; elementIdx: number } | null {
-  for (let si = 0; si < layout.sections.length; si++) {
-    const sec = layout.sections[si];
-    for (let ri = 0; ri < sec.rows.length; ri++) {
-      const ei = sec.rows[ri].elements.findIndex((e) => e.id === elementId);
-      if (ei >= 0) return { sectionIdx: si, rowIdx: ri, elementIdx: ei };
-    }
-  }
+): { si: number; ri: number; ci: number; ei: number } | null {
+  for (let si = 0; si < layout.sections.length; si++)
+    for (let ri = 0; ri < layout.sections[si].rows.length; ri++)
+      for (
+        let ci = 0;
+        ci < layout.sections[si].rows[ri].columns.length;
+        ci++
+      ) {
+        const ei = layout.sections[si].rows[ri].columns[ci].elements.findIndex(
+          (e) => e.id === elementId
+        );
+        if (ei >= 0) return { si, ri, ci, ei };
+      }
   return null;
 }
 
-export function findRow(
-  layout: PageLayout,
-  rowId: string
-): { sectionIdx: number; rowIdx: number } | null {
-  for (let si = 0; si < layout.sections.length; si++) {
-    const ri = layout.sections[si].rows.findIndex((r) => r.id === rowId);
-    if (ri >= 0) return { sectionIdx: si, rowIdx: ri };
-  }
-  return null;
+/* ---- element → column mapping ------------------------------------ */
+
+export function buildElementToColumn(
+  layout: PageLayout
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const sec of layout.sections)
+    for (const row of sec.rows)
+      for (const col of row.columns)
+        for (const el of col.elements) map[el.id] = col.id;
+  return map;
 }
 
-/* ---- add element to row ------------------------------------------ */
+export function buildAllElements(
+  layout: PageLayout
+): Record<string, LayoutElement> {
+  const map: Record<string, LayoutElement> = {};
+  for (const sec of layout.sections)
+    for (const row of sec.rows)
+      for (const col of row.columns)
+        for (const el of col.elements) map[el.id] = el;
+  return map;
+}
 
-export function addElementToRow(
+export function buildColumnIds(layout: PageLayout): Set<string> {
+  const set = new Set<string>();
+  for (const sec of layout.sections)
+    for (const row of sec.rows) for (const col of row.columns) set.add(col.id);
+  return set;
+}
+
+/* ---- mutations --------------------------------------------------- */
+
+export function addElementToColumn(
   layout: PageLayout,
-  rowId: string,
+  columnId: string,
   element: LayoutElement
 ): PageLayout {
   const next = clone(layout);
-  const loc = findRow(next, rowId);
+  const loc = findColumn(next, columnId);
   if (!loc) return layout;
-
-  const row = next.sections[loc.sectionIdx].rows[loc.rowIdx];
-  const remaining = rowRemaining(row);
-  if (remaining <= 0) return layout;
-
-  const el = { ...element, span: Math.min(element.span, remaining) as ElementSpan };
-  row.elements.push(el);
+  next.sections[loc.si].rows[loc.ri].columns[loc.ci].elements.push(element);
   return next;
 }
 
-/* ---- remove element ---------------------------------------------- */
-
-export function removeElement(
+export function removeElementById(
   layout: PageLayout,
   elementId: string
 ): { layout: PageLayout; element: LayoutElement | null } {
   const next = clone(layout);
   const loc = findElement(next, elementId);
   if (!loc) return { layout, element: null };
-
-  const [element] = next.sections[loc.sectionIdx].rows[loc.rowIdx].elements.splice(
-    loc.elementIdx,
-    1
-  );
+  const [element] = next.sections[loc.si].rows[loc.ri].columns[
+    loc.ci
+  ].elements.splice(loc.ei, 1);
   return { layout: next, element };
 }
 
-/* ---- update element ---------------------------------------------- */
-
-export function updateElement(
+export function updateElementById(
   layout: PageLayout,
   elementId: string,
   updated: LayoutElement
@@ -158,56 +187,53 @@ export function updateElement(
   const next = clone(layout);
   const loc = findElement(next, elementId);
   if (!loc) return layout;
-  next.sections[loc.sectionIdx].rows[loc.rowIdx].elements[loc.elementIdx] =
+  next.sections[loc.si].rows[loc.ri].columns[loc.ci].elements[loc.ei] =
     updated;
   return next;
 }
 
-/* ---- resize element ---------------------------------------------- */
-
-export function resizeElement(
+export function reorderInColumn(
   layout: PageLayout,
-  elementId: string,
-  newSpan: ElementSpan
+  columnId: string,
+  fromId: string,
+  toId: string
 ): PageLayout {
   const next = clone(layout);
-  const loc = findElement(next, elementId);
+  const loc = findColumn(next, columnId);
   if (!loc) return layout;
-
-  const row = next.sections[loc.sectionIdx].rows[loc.rowIdx];
-  const el = row.elements[loc.elementIdx];
-  const othersSpan = rowRemaining(row) + el.span;
-  if (newSpan > othersSpan) return layout;
-
-  el.span = newSpan;
+  const els = next.sections[loc.si].rows[loc.ri].columns[loc.ci].elements;
+  const fi = els.findIndex((e) => e.id === fromId);
+  const ti = els.findIndex((e) => e.id === toId);
+  if (fi < 0 || ti < 0) return layout;
+  const [el] = els.splice(fi, 1);
+  els.splice(ti, 0, el);
   return next;
 }
 
-/* ---- move element between rows ----------------------------------- */
-
-export function moveElementToRow(
+export function moveElementToColumn(
   layout: PageLayout,
   elementId: string,
-  targetRowId: string
+  targetColumnId: string
 ): PageLayout {
-  const { layout: withoutEl, element } = removeElement(layout, elementId);
+  const { layout: without, element } = removeElementById(layout, elementId);
   if (!element) return layout;
-  return addElementToRow(withoutEl, targetRowId, element);
+  return addElementToColumn(without, targetColumnId, element);
 }
 
-/* ---- row management ---------------------------------------------- */
+/* ---- row / section management ------------------------------------ */
 
-export function addRow(
+export function addRowToSection(
   layout: PageLayout,
-  sectionType: SectionType
+  sectionType: SectionType,
+  spans: SpanSize[]
 ): PageLayout {
   const next = clone(layout);
   const sec = next.sections.find((s) => s.type === sectionType);
-  if (sec) sec.rows.push(createRow());
+  if (sec) sec.rows.push(createRow(spans));
   return next;
 }
 
-export function removeRow(
+export function removeRowById(
   layout: PageLayout,
   rowId: string
 ): PageLayout {
@@ -220,24 +246,4 @@ export function removeRow(
     }
   }
   return layout;
-}
-
-/* ---- reorder within row ------------------------------------------ */
-
-export function moveElementInRow(
-  layout: PageLayout,
-  elementId: string,
-  direction: "left" | "right"
-): PageLayout {
-  const next = clone(layout);
-  const loc = findElement(next, elementId);
-  if (!loc) return layout;
-
-  const els = next.sections[loc.sectionIdx].rows[loc.rowIdx].elements;
-  const idx = loc.elementIdx;
-  const swapIdx = direction === "left" ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= els.length) return layout;
-
-  [els[idx], els[swapIdx]] = [els[swapIdx], els[idx]];
-  return next;
 }
