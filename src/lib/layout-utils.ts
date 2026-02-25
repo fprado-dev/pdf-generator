@@ -2,10 +2,14 @@ import type {
   PageLayout,
   LayoutElement,
   SectionType,
+  ElementSpan,
 } from "./layout-types";
+import { rowRemaining, createRow } from "./layout-types";
 import type { ReportFrontMatter } from "./types";
 
-/* ---- markdown generation ----------------------------------------- */
+/* ================================================================== */
+/*  Markdown generation                                               */
+/* ================================================================== */
 
 export function layoutToMarkdown(
   frontMatter: ReportFrontMatter,
@@ -26,32 +30,44 @@ export function layoutToMarkdown(
 
   for (const section of layout.sections) {
     for (const row of section.rows) {
-      for (const col of row.columns) {
-        for (const el of col.elements) {
-          switch (el.type) {
-            case "titulo":
-              if (el.content) out += `# ${el.content}\n\n`;
-              break;
-            case "subtitulo":
-              if (el.content) out += `## ${el.content}\n\n`;
-              break;
-            case "texto":
-              if (el.content) out += `${el.content}\n\n`;
-              break;
-            case "imagem":
-              if (el.imageParams) {
-                const img = { ...el.imageParams, order: imgOrder++ };
-                const lines: string[] = [];
-                if (img.src) lines.push(`src: ${img.src}`);
-                if (img.alt) lines.push(`alt: ${img.alt}`);
-                if (img.legenda) lines.push(`legenda: ${img.legenda}`);
-                if (img.position) lines.push(`position: ${img.position}`);
-                if (img.size) lines.push(`size: ${img.size}`);
-                lines.push(`order: ${img.order}`);
-                out += `:::imagem\n${lines.join("\n")}\n:::\n\n`;
+      for (const el of row.elements) {
+        switch (el.type) {
+          case "titulo":
+            if (el.content) out += `# ${el.content}\n\n`;
+            break;
+          case "subtitulo":
+            if (el.content) out += `## ${el.content}\n\n`;
+            break;
+          case "texto":
+            if (el.content) out += `${el.content}\n\n`;
+            break;
+          case "separador":
+            out += "---\n\n";
+            break;
+          case "tabela":
+            if (el.tableData && el.tableData.length > 0) {
+              const hdr = el.tableData[0];
+              out += `| ${hdr.join(" | ")} |\n`;
+              out += `| ${hdr.map(() => "---").join(" | ")} |\n`;
+              for (let r = 1; r < el.tableData.length; r++) {
+                out += `| ${el.tableData[r].join(" | ")} |\n`;
               }
-              break;
-          }
+              out += "\n";
+            }
+            break;
+          case "imagem":
+            if (el.imageParams) {
+              const img = { ...el.imageParams, order: imgOrder++ };
+              const lines: string[] = [];
+              if (img.src) lines.push(`src: ${img.src}`);
+              if (img.alt) lines.push(`alt: ${img.alt}`);
+              if (img.legenda) lines.push(`legenda: ${img.legenda}`);
+              if (img.position) lines.push(`position: ${img.position}`);
+              if (img.size) lines.push(`size: ${img.size}`);
+              lines.push(`order: ${img.order}`);
+              out += `:::imagem\n${lines.join("\n")}\n:::\n\n`;
+            }
+            break;
         }
       }
     }
@@ -60,133 +76,134 @@ export function layoutToMarkdown(
   return out.trimEnd();
 }
 
-/* ---- lookup helpers ---------------------------------------------- */
+/* ================================================================== */
+/*  Immutable layout helpers                                          */
+/* ================================================================== */
 
-export interface ElementLocation {
-  sectionIdx: number;
-  rowIdx: number;
-  colIdx: number;
-  elementIdx: number;
+function clone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
 }
 
-export function findElementLocation(
+/* ---- find -------------------------------------------------------- */
+
+export function findElement(
   layout: PageLayout,
   elementId: string
-): ElementLocation | null {
+): { sectionIdx: number; rowIdx: number; elementIdx: number } | null {
   for (let si = 0; si < layout.sections.length; si++) {
     const sec = layout.sections[si];
     for (let ri = 0; ri < sec.rows.length; ri++) {
-      const row = sec.rows[ri];
-      for (let ci = 0; ci < row.columns.length; ci++) {
-        const col = row.columns[ci];
-        const ei = col.elements.findIndex((e) => e.id === elementId);
-        if (ei >= 0)
-          return { sectionIdx: si, rowIdx: ri, colIdx: ci, elementIdx: ei };
-      }
+      const ei = sec.rows[ri].elements.findIndex((e) => e.id === elementId);
+      if (ei >= 0) return { sectionIdx: si, rowIdx: ri, elementIdx: ei };
     }
   }
   return null;
 }
 
-export function findColumnLocation(
+export function findRow(
   layout: PageLayout,
-  columnId: string
-): { sectionIdx: number; rowIdx: number; colIdx: number } | null {
+  rowId: string
+): { sectionIdx: number; rowIdx: number } | null {
   for (let si = 0; si < layout.sections.length; si++) {
-    const sec = layout.sections[si];
-    for (let ri = 0; ri < sec.rows.length; ri++) {
-      const ci = sec.rows[ri].columns.findIndex((c) => c.id === columnId);
-      if (ci >= 0) return { sectionIdx: si, rowIdx: ri, colIdx: ci };
-    }
+    const ri = layout.sections[si].rows.findIndex((r) => r.id === rowId);
+    if (ri >= 0) return { sectionIdx: si, rowIdx: ri };
   }
   return null;
 }
 
-/* ---- immutable layout mutations ---------------------------------- */
+/* ---- add element to row ------------------------------------------ */
 
-function cloneLayout(layout: PageLayout): PageLayout {
-  return JSON.parse(JSON.stringify(layout));
-}
-
-export function addElementToColumn(
+export function addElementToRow(
   layout: PageLayout,
-  columnId: string,
-  element: LayoutElement,
-  afterElementId?: string
+  rowId: string,
+  element: LayoutElement
 ): PageLayout {
-  const next = cloneLayout(layout);
-  const loc = findColumnLocation(next, columnId);
+  const next = clone(layout);
+  const loc = findRow(next, rowId);
   if (!loc) return layout;
 
-  const col = next.sections[loc.sectionIdx].rows[loc.rowIdx].columns[loc.colIdx];
+  const row = next.sections[loc.sectionIdx].rows[loc.rowIdx];
+  const remaining = rowRemaining(row);
+  if (remaining <= 0) return layout;
 
-  if (afterElementId) {
-    const idx = col.elements.findIndex((e) => e.id === afterElementId);
-    col.elements.splice(idx + 1, 0, element);
-  } else {
-    col.elements.push(element);
-  }
-
+  const el = { ...element, span: Math.min(element.span, remaining) as ElementSpan };
+  row.elements.push(el);
   return next;
 }
+
+/* ---- remove element ---------------------------------------------- */
 
 export function removeElement(
   layout: PageLayout,
   elementId: string
 ): { layout: PageLayout; element: LayoutElement | null } {
-  const next = cloneLayout(layout);
-  const loc = findElementLocation(next, elementId);
+  const next = clone(layout);
+  const loc = findElement(next, elementId);
   if (!loc) return { layout, element: null };
 
-  const col =
-    next.sections[loc.sectionIdx].rows[loc.rowIdx].columns[loc.colIdx];
-  const [element] = col.elements.splice(loc.elementIdx, 1);
+  const [element] = next.sections[loc.sectionIdx].rows[loc.rowIdx].elements.splice(
+    loc.elementIdx,
+    1
+  );
   return { layout: next, element };
 }
+
+/* ---- update element ---------------------------------------------- */
 
 export function updateElement(
   layout: PageLayout,
   elementId: string,
   updated: LayoutElement
 ): PageLayout {
-  const next = cloneLayout(layout);
-  const loc = findElementLocation(next, elementId);
+  const next = clone(layout);
+  const loc = findElement(next, elementId);
   if (!loc) return layout;
-
-  next.sections[loc.sectionIdx].rows[loc.rowIdx].columns[loc.colIdx].elements[
-    loc.elementIdx
-  ] = updated;
+  next.sections[loc.sectionIdx].rows[loc.rowIdx].elements[loc.elementIdx] =
+    updated;
   return next;
 }
 
-export function reorderInColumn(
+/* ---- resize element ---------------------------------------------- */
+
+export function resizeElement(
   layout: PageLayout,
-  columnId: string,
-  fromId: string,
-  toId: string
+  elementId: string,
+  newSpan: ElementSpan
 ): PageLayout {
-  const next = cloneLayout(layout);
-  const loc = findColumnLocation(next, columnId);
+  const next = clone(layout);
+  const loc = findElement(next, elementId);
   if (!loc) return layout;
 
-  const col = next.sections[loc.sectionIdx].rows[loc.rowIdx].columns[loc.colIdx];
-  const fromIdx = col.elements.findIndex((e) => e.id === fromId);
-  const toIdx = col.elements.findIndex((e) => e.id === toId);
-  if (fromIdx < 0 || toIdx < 0) return layout;
+  const row = next.sections[loc.sectionIdx].rows[loc.rowIdx];
+  const el = row.elements[loc.elementIdx];
+  const othersSpan = rowRemaining(row) + el.span;
+  if (newSpan > othersSpan) return layout;
 
-  const [el] = col.elements.splice(fromIdx, 1);
-  col.elements.splice(toIdx, 0, el);
+  el.span = newSpan;
   return next;
 }
 
-export function addRowToSection(
+/* ---- move element between rows ----------------------------------- */
+
+export function moveElementToRow(
   layout: PageLayout,
-  sectionType: SectionType,
-  row: import("./layout-types").LayoutRow
+  elementId: string,
+  targetRowId: string
 ): PageLayout {
-  const next = cloneLayout(layout);
+  const { layout: withoutEl, element } = removeElement(layout, elementId);
+  if (!element) return layout;
+  return addElementToRow(withoutEl, targetRowId, element);
+}
+
+/* ---- row management ---------------------------------------------- */
+
+export function addRow(
+  layout: PageLayout,
+  sectionType: SectionType
+): PageLayout {
+  const next = clone(layout);
   const sec = next.sections.find((s) => s.type === sectionType);
-  if (sec) sec.rows.push(row);
+  if (sec) sec.rows.push(createRow());
   return next;
 }
 
@@ -194,7 +211,7 @@ export function removeRow(
   layout: PageLayout,
   rowId: string
 ): PageLayout {
-  const next = cloneLayout(layout);
+  const next = clone(layout);
   for (const sec of next.sections) {
     const idx = sec.rows.findIndex((r) => r.id === rowId);
     if (idx >= 0 && sec.rows.length > 1) {
@@ -203,4 +220,24 @@ export function removeRow(
     }
   }
   return layout;
+}
+
+/* ---- reorder within row ------------------------------------------ */
+
+export function moveElementInRow(
+  layout: PageLayout,
+  elementId: string,
+  direction: "left" | "right"
+): PageLayout {
+  const next = clone(layout);
+  const loc = findElement(next, elementId);
+  if (!loc) return layout;
+
+  const els = next.sections[loc.sectionIdx].rows[loc.rowIdx].elements;
+  const idx = loc.elementIdx;
+  const swapIdx = direction === "left" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= els.length) return layout;
+
+  [els[idx], els[swapIdx]] = [els[swapIdx], els[idx]];
+  return next;
 }

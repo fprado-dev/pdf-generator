@@ -4,7 +4,6 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import {
   DndContext,
   closestCenter,
-  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -15,37 +14,31 @@ import {
   type DragOverEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import type {
   ElementType,
   LayoutElement,
-  LayoutColumn,
   LayoutRow,
   LayoutSection,
   SectionType,
   PageLayout,
+  ElementSpan,
 } from "@/lib/layout-types";
 import {
   createElement,
-  createRow,
   createDefaultLayout,
-  ROW_PRESETS,
+  rowRemaining,
 } from "@/lib/layout-types";
 import type { ReportFrontMatter } from "@/lib/types";
 import {
   layoutToMarkdown,
-  addElementToColumn,
+  addElementToRow,
   removeElement,
   updateElement,
-  reorderInColumn,
-  addRowToSection,
+  resizeElement,
+  moveElementToRow,
+  addRow,
   removeRow,
+  moveElementInRow,
 } from "@/lib/layout-utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -59,31 +52,28 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
-  GripVertical,
-  Trash2,
   Heading1,
   Heading2,
   AlignLeft,
   ImageIcon,
-  ImagePlus,
-  Plus,
+  Minus,
+  Table,
   Download,
-  X,
+  Plus,
+  Trash2,
+  ImagePlus,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
-  Columns3,
+  X,
+  GripVertical,
 } from "lucide-react";
 
-const IMAGE_ACCEPT = [
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/gif",
-  "image/webp",
-];
+const IMG_ACCEPT = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
 
 /* ================================================================== */
-/*  Palette – draggable element types                                 */
+/*  Palette                                                           */
 /* ================================================================== */
 
 const PALETTE = [
@@ -91,6 +81,8 @@ const PALETTE = [
   { type: "subtitulo" as const, label: "Subtítulo", Icon: Heading2 },
   { type: "texto" as const, label: "Texto", Icon: AlignLeft },
   { type: "imagem" as const, label: "Imagem", Icon: ImageIcon },
+  { type: "separador" as const, label: "Separador", Icon: Minus },
+  { type: "tabela" as const, label: "Tabela", Icon: Table },
 ];
 
 function PaletteItem({
@@ -126,31 +118,30 @@ function PaletteItem({
 }
 
 /* ================================================================== */
-/*  Sortable element inside a column                                  */
+/*  Element card (rendered inside the grid)                           */
 /* ================================================================== */
 
-function SortableElement({
+function ElementCard({
   element,
   onUpdate,
   onDelete,
+  onResize,
+  onMoveLeft,
+  onMoveRight,
+  maxSpan,
 }: {
   element: LayoutElement;
   onUpdate: (el: LayoutElement) => void;
   onDelete: () => void;
+  onResize: (span: ElementSpan) => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  maxSpan: number;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: element.id, data: { type: "element" } });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: element.id,
+    data: { type: "element", elementId: element.id },
+  });
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -175,46 +166,95 @@ function SortableElement({
     [element, onUpdate]
   );
 
+  const addTableRow = () => {
+    if (!element.tableData) return;
+    const cols = element.tableData[0]?.length ?? 2;
+    onUpdate({
+      ...element,
+      tableData: [...element.tableData, Array(cols).fill("")],
+    });
+  };
+
+  const addTableCol = () => {
+    if (!element.tableData) return;
+    onUpdate({
+      ...element,
+      tableData: element.tableData.map((row, ri) => [
+        ...row,
+        ri === 0 ? `Col ${row.length + 1}` : "",
+      ]),
+    });
+  };
+
+  const updateCell = (ri: number, ci: number, value: string) => {
+    if (!element.tableData) return;
+    const next = element.tableData.map((r) => [...r]);
+    next[ri][ci] = value;
+    onUpdate({ ...element, tableData: next });
+  };
+
+  const spansAvailable = Array.from({ length: maxSpan }, (_, i) => (i + 1) as ElementSpan);
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ gridColumn: `span ${element.span}` }}
       className={cn(
-        "group relative flex items-start gap-1 rounded-md p-1 transition-all",
-        "hover:bg-accent/40",
-        isDragging && "opacity-30 ring-2 ring-primary/30 z-10"
+        "group relative rounded-lg border bg-white p-2 transition-all min-h-[48px]",
+        isDragging && "opacity-30 ring-2 ring-primary/30"
       )}
     >
-      {/* drag handle */}
-      <button
-        type="button"
-        className="mt-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity"
-        {...attributes}
-        {...listeners}
-        aria-label="Arrastar"
-      >
-        <GripVertical className="size-3.5 text-muted-foreground" />
-      </button>
+      {/* drag handle + controls overlay */}
+      <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white rounded-full border shadow-sm px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <button
+          type="button"
+          onClick={onMoveLeft}
+          className="p-0.5 rounded hover:bg-muted"
+          title="Mover esquerda"
+        >
+          <ChevronLeft className="size-3 text-muted-foreground" />
+        </button>
+        <button
+          type="button"
+          className="p-0.5 rounded cursor-grab active:cursor-grabbing hover:bg-muted touch-none"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3 text-muted-foreground" />
+        </button>
+        <button
+          type="button"
+          onClick={onMoveRight}
+          className="p-0.5 rounded hover:bg-muted"
+          title="Mover direita"
+        >
+          <ChevronRight className="size-3 text-muted-foreground" />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="p-0.5 rounded hover:bg-destructive/10"
+          title="Remover"
+        >
+          <Trash2 className="size-3 text-muted-foreground hover:text-destructive" />
+        </button>
+      </div>
 
       {/* content */}
-      <div className="flex-1 min-w-0">
+      <div className="min-h-[24px]">
         {element.type === "titulo" && (
           <input
             value={element.content}
-            onChange={(e) =>
-              onUpdate({ ...element, content: e.target.value })
-            }
+            onChange={(e) => onUpdate({ ...element, content: e.target.value })}
             placeholder="Título..."
-            className="w-full bg-transparent border-0 outline-none text-lg font-bold placeholder:text-muted-foreground/40"
+            className="w-full bg-transparent border-0 outline-none text-base font-bold placeholder:text-muted-foreground/40"
           />
         )}
 
         {element.type === "subtitulo" && (
           <input
             value={element.content}
-            onChange={(e) =>
-              onUpdate({ ...element, content: e.target.value })
-            }
+            onChange={(e) => onUpdate({ ...element, content: e.target.value })}
             placeholder="Subtítulo..."
             className="w-full bg-transparent border-0 outline-none text-sm font-semibold placeholder:text-muted-foreground/40"
           />
@@ -223,47 +263,46 @@ function SortableElement({
         {element.type === "texto" && (
           <textarea
             value={element.content}
-            onChange={(e) =>
-              onUpdate({ ...element, content: e.target.value })
-            }
+            onChange={(e) => onUpdate({ ...element, content: e.target.value })}
             placeholder="Texto..."
-            className="w-full bg-transparent border-0 outline-none text-sm resize-y min-h-[22px] placeholder:text-muted-foreground/40"
-            rows={1}
+            className="w-full bg-transparent border-0 outline-none text-xs resize-y min-h-[28px] placeholder:text-muted-foreground/40"
+            rows={2}
           />
+        )}
+
+        {element.type === "separador" && (
+          <div className="flex items-center py-1">
+            <hr className="flex-1 border-t-2 border-border" />
+          </div>
         )}
 
         {element.type === "imagem" && (
           <div className="space-y-1">
             {element.imageParams?.src ? (
-              <div className="relative rounded border border-border/50 overflow-hidden bg-muted/20">
+              <div className="relative rounded overflow-hidden bg-muted/20 border border-border/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={element.imageParams.src}
                   alt={element.imageParams.alt ?? ""}
-                  className="max-h-[100px] w-full object-contain"
+                  className="max-h-[120px] w-full object-contain"
                 />
               </div>
             ) : (
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDrop={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   const files = Array.from(e.dataTransfer.files).filter((f) =>
-                    IMAGE_ACCEPT.includes(f.type)
+                    IMG_ACCEPT.includes(f.type)
                   );
                   if (files[0]) handleFile(files[0]);
                 }}
                 onClick={() => fileRef.current?.click()}
-                className="flex flex-col items-center gap-1 rounded border border-dashed border-border p-3 cursor-pointer hover:border-primary/40 hover:bg-accent/20 transition-colors"
+                className="flex flex-col items-center gap-1 rounded border border-dashed border-border p-4 cursor-pointer hover:border-primary/40 hover:bg-accent/20 transition-colors"
               >
-                <ImagePlus className="size-5 text-muted-foreground" />
-                <span className="text-[10px] text-muted-foreground">
-                  Clique ou arraste
-                </span>
+                <ImagePlus className="size-6 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground">Clique ou arraste</span>
                 <input
                   ref={fileRef}
                   type="file"
@@ -282,94 +321,131 @@ function SortableElement({
                 onChange={(e) =>
                   onUpdate({
                     ...element,
-                    imageParams: {
-                      ...element.imageParams!,
-                      legenda: e.target.value,
-                    },
+                    imageParams: { ...element.imageParams!, legenda: e.target.value },
                   })
                 }
                 placeholder="Legenda..."
-                className="w-full bg-transparent border-0 outline-none text-[10px] italic text-center text-muted-foreground placeholder:text-muted-foreground/30"
+                className="w-full bg-transparent border-0 outline-none text-[9px] italic text-center text-muted-foreground"
               />
             )}
           </div>
         )}
+
+        {element.type === "tabela" && element.tableData && (
+          <div className="space-y-1">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[10px]">
+                <thead>
+                  <tr>
+                    {element.tableData[0]?.map((cell, ci) => (
+                      <th key={ci} className="border border-border/60 p-1 bg-muted/40 font-medium">
+                        <input
+                          value={cell}
+                          onChange={(e) => updateCell(0, ci, e.target.value)}
+                          className="w-full bg-transparent border-0 outline-none text-center font-medium"
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {element.tableData.slice(1).map((row, ri) => (
+                    <tr key={ri + 1}>
+                      {row.map((cell, ci) => (
+                        <td key={ci} className="border border-border/60 p-1">
+                          <input
+                            value={cell}
+                            onChange={(e) => updateCell(ri + 1, ci, e.target.value)}
+                            className="w-full bg-transparent border-0 outline-none"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-1 justify-end">
+              <button
+                type="button"
+                onClick={addTableRow}
+                className="text-[9px] text-muted-foreground hover:text-foreground px-1"
+              >
+                + linha
+              </button>
+              <button
+                type="button"
+                onClick={addTableCol}
+                className="text-[9px] text-muted-foreground hover:text-foreground px-1"
+              >
+                + coluna
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* delete */}
-      <button
-        type="button"
-        onClick={onDelete}
-        className="mt-0.5 shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-opacity"
-        aria-label="Remover"
-      >
-        <X className="size-3 text-muted-foreground hover:text-destructive" />
-      </button>
+      {/* resize bar */}
+      <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-px bg-white rounded-full border shadow-sm px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        {spansAvailable.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onResize(s)}
+            className={cn(
+              "px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors",
+              element.span === s
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {s}/4
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
 /* ================================================================== */
-/*  Droppable column                                                  */
+/*  Green drop zone                                                   */
 /* ================================================================== */
 
-function DroppableColumn({
-  column,
-  onUpdateElement,
-  onDeleteElement,
-  highlighted,
+function GreenZone({
+  rowId,
+  span,
+  isActive,
 }: {
-  column: LayoutColumn;
-  onUpdateElement: (id: string, el: LayoutElement) => void;
-  onDeleteElement: (id: string) => void;
-  highlighted: boolean;
+  rowId: string;
+  span: number;
+  isActive: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: column.id,
-    data: { type: "column" },
+    id: `zone_${rowId}`,
+    data: { type: "zone", rowId },
   });
 
-  const active = isOver || highlighted;
+  const lit = isOver || isActive;
 
   return (
     <div
       ref={setNodeRef}
-      style={{ width: `${(column.span / 12) * 100}%` }}
+      style={{ gridColumn: `span ${span}` }}
       className={cn(
-        "rounded-md border border-dashed min-h-[48px] p-1.5 transition-all",
-        active
-          ? "border-primary/60 bg-primary/5 shadow-sm"
-          : "border-border/30"
+        "rounded-lg border-2 border-dashed min-h-[48px] flex items-center justify-center transition-all",
+        lit
+          ? "border-emerald-400 bg-emerald-100/80 shadow-inner"
+          : "border-emerald-200/70 bg-emerald-50/60"
       )}
     >
-      <SortableContext
-        items={column.elements.map((e) => e.id)}
-        strategy={verticalListSortingStrategy}
+      <span
+        className={cn(
+          "text-[10px] select-none transition-colors",
+          lit ? "text-emerald-600 font-medium" : "text-emerald-300"
+        )}
       >
-        {column.elements.map((el) => (
-          <SortableElement
-            key={el.id}
-            element={el}
-            onUpdate={(u) => onUpdateElement(el.id, u)}
-            onDelete={() => onDeleteElement(el.id)}
-          />
-        ))}
-      </SortableContext>
-
-      {column.elements.length === 0 && !active && (
-        <div className="flex items-center justify-center h-full min-h-[40px]">
-          <span className="text-[10px] text-muted-foreground/40 select-none">
-            Solte aqui
-          </span>
-        </div>
-      )}
-      {active && column.elements.length === 0 && (
-        <div className="flex items-center justify-center h-full min-h-[40px]">
-          <span className="text-xs text-primary/60 font-medium select-none">
-            ↓ Soltar
-          </span>
-        </div>
-      )}
+        {lit ? "↓ Soltar" : "+"}
+      </span>
     </div>
   );
 }
@@ -382,37 +458,56 @@ function RowComponent({
   row,
   onUpdateElement,
   onDeleteElement,
+  onResizeElement,
+  onMoveElement,
   onDeleteRow,
   canDelete,
-  overColumnId,
+  activeOverRowId,
 }: {
   row: LayoutRow;
   onUpdateElement: (id: string, el: LayoutElement) => void;
   onDeleteElement: (id: string) => void;
+  onResizeElement: (id: string, span: ElementSpan) => void;
+  onMoveElement: (id: string, dir: "left" | "right") => void;
   onDeleteRow: () => void;
   canDelete: boolean;
-  overColumnId: string | null;
+  activeOverRowId: string | null;
 }) {
+  const remaining = rowRemaining(row);
+
   return (
-    <div className="group/row relative flex gap-1.5 p-1">
-      {row.columns.map((col) => (
-        <DroppableColumn
-          key={col.id}
-          column={col}
-          onUpdateElement={onUpdateElement}
-          onDeleteElement={onDeleteElement}
-          highlighted={overColumnId === col.id}
-        />
-      ))}
+    <div className="group/row relative">
+      <div className="grid grid-cols-4 gap-2 p-1.5">
+        {row.elements.map((el) => (
+          <ElementCard
+            key={el.id}
+            element={el}
+            onUpdate={(u) => onUpdateElement(el.id, u)}
+            onDelete={() => onDeleteElement(el.id)}
+            onResize={(s) => onResizeElement(el.id, s)}
+            onMoveLeft={() => onMoveElement(el.id, "left")}
+            onMoveRight={() => onMoveElement(el.id, "right")}
+            maxSpan={remaining + el.span}
+          />
+        ))}
+
+        {remaining > 0 && (
+          <GreenZone
+            rowId={row.id}
+            span={remaining}
+            isActive={activeOverRowId === row.id}
+          />
+        )}
+      </div>
 
       {canDelete && (
         <button
           type="button"
           onClick={onDeleteRow}
-          className="absolute -right-6 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 group-hover/row:opacity-100 hover:bg-destructive/10 transition-opacity"
-          aria-label="Remover linha"
+          className="absolute -right-5 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 group-hover/row:opacity-100 hover:bg-destructive/10 transition-opacity"
+          title="Remover linha"
         >
-          <Trash2 className="size-3 text-muted-foreground hover:text-destructive" />
+          <X className="size-3 text-muted-foreground hover:text-destructive" />
         </button>
       )}
     </div>
@@ -420,120 +515,91 @@ function RowComponent({
 }
 
 /* ================================================================== */
-/*  Section (topo / corpo / rodapé)                                   */
+/*  Section                                                           */
 /* ================================================================== */
 
-const SECTION_STYLES: Record<SectionType, string> = {
-  topo: "border-blue-300/50 bg-blue-50/20",
-  corpo: "border-border/50 bg-transparent",
-  rodape: "border-stone-300/50 bg-stone-50/20",
-};
-
-const SECTION_LABEL_STYLES: Record<SectionType, string> = {
-  topo: "text-blue-500/70",
-  corpo: "text-muted-foreground/60",
-  rodape: "text-stone-500/70",
+const SECTION_COLORS: Record<SectionType, { border: string; label: string; bg: string }> = {
+  topo: {
+    border: "border-blue-200/60",
+    label: "text-blue-400",
+    bg: "bg-blue-50/20",
+  },
+  corpo: {
+    border: "border-gray-200/60",
+    label: "text-gray-400",
+    bg: "bg-transparent",
+  },
+  rodape: {
+    border: "border-stone-200/60",
+    label: "text-stone-400",
+    bg: "bg-stone-50/20",
+  },
 };
 
 function SectionComponent({
   section,
   onUpdateElement,
   onDeleteElement,
+  onResizeElement,
+  onMoveElement,
   onDeleteRow,
   onAddRow,
-  overColumnId,
+  activeOverRowId,
 }: {
   section: LayoutSection;
   onUpdateElement: (id: string, el: LayoutElement) => void;
   onDeleteElement: (id: string) => void;
+  onResizeElement: (id: string, span: ElementSpan) => void;
+  onMoveElement: (id: string, dir: "left" | "right") => void;
   onDeleteRow: (rowId: string) => void;
-  onAddRow: (spans: number[]) => void;
-  overColumnId: string | null;
+  onAddRow: () => void;
+  activeOverRowId: string | null;
 }) {
-  const [addOpen, setAddOpen] = useState(false);
+  const colors = SECTION_COLORS[section.type];
 
   return (
     <div
       className={cn(
-        "rounded-lg border-2 border-dashed mb-3 relative",
-        SECTION_STYLES[section.type]
+        "rounded-xl border-2 border-dashed mb-4 relative",
+        colors.border,
+        colors.bg
       )}
     >
-      {/* Section label */}
       <div
         className={cn(
-          "absolute -top-2.5 left-3 px-1.5 text-[10px] font-semibold uppercase tracking-wider bg-background",
-          SECTION_LABEL_STYLES[section.type]
+          "absolute -top-2.5 left-3 px-2 text-[9px] font-bold uppercase tracking-widest bg-white rounded",
+          colors.label
         )}
       >
         {section.label}
       </div>
 
-      <div className="pt-3 pb-1 px-1">
+      <div className="pt-4 pb-2 px-2 space-y-1">
         {section.rows.map((row) => (
           <RowComponent
             key={row.id}
             row={row}
             onUpdateElement={onUpdateElement}
             onDeleteElement={onDeleteElement}
+            onResizeElement={onResizeElement}
+            onMoveElement={onMoveElement}
             onDeleteRow={() => onDeleteRow(row.id)}
             canDelete={section.rows.length > 1}
-            overColumnId={overColumnId}
+            activeOverRowId={activeOverRowId}
           />
         ))}
 
-        {/* Add row */}
-        <div className="flex justify-center py-1">
-          {!addOpen ? (
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <Plus className="size-3" />
-              linha
-            </button>
-          ) : (
-            <div className="flex items-center gap-1 bg-card border border-border rounded-lg px-2 py-1 shadow-sm">
-              {ROW_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    onAddRow(preset.spans);
-                    setAddOpen(false);
-                  }}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-[10px] hover:bg-accent transition-colors"
-                  title={preset.label}
-                >
-                  <ColumnPreview spans={preset.spans} />
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setAddOpen(false)}
-                className="ml-1 p-0.5 rounded hover:bg-muted"
-              >
-                <X className="size-3 text-muted-foreground" />
-              </button>
-            </div>
-          )}
+        <div className="flex justify-center pt-1 pb-1">
+          <button
+            type="button"
+            onClick={onAddRow}
+            className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            <Plus className="size-3" />
+            <span>linha</span>
+          </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ColumnPreview({ spans }: { spans: number[] }) {
-  return (
-    <div className="flex gap-0.5 h-3">
-      {spans.map((s, i) => (
-        <div
-          key={i}
-          className="bg-muted-foreground/30 rounded-[2px]"
-          style={{ width: `${(s / 12) * 32}px`, height: "100%" }}
-        />
-      ))}
     </div>
   );
 }
@@ -546,80 +612,74 @@ function PaletteOverlay({ type }: { type: ElementType }) {
   const item = PALETTE.find((p) => p.type === type);
   if (!item) return null;
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-lg">
-      <item.Icon className="size-4 text-primary" />
-      <span className="text-sm font-medium">{item.label}</span>
+    <div className="flex items-center gap-2 rounded-lg border-2 border-emerald-400 bg-emerald-50 px-4 py-2.5 shadow-lg">
+      <item.Icon className="size-4 text-emerald-600" />
+      <span className="text-sm font-medium text-emerald-700">{item.label}</span>
     </div>
   );
 }
 
 function ElementOverlay({ element }: { element: LayoutElement }) {
-  const typeLabels: Record<ElementType, string> = {
+  const labels: Record<ElementType, string> = {
     titulo: "Título",
     subtitulo: "Subtítulo",
     texto: "Texto",
     imagem: "Imagem",
+    separador: "Separador",
+    tabela: "Tabela",
   };
-
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-lg max-w-[280px]">
+    <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-lg">
       <GripVertical className="size-3.5 text-muted-foreground" />
-      <span className="text-[10px] text-muted-foreground">
-        {typeLabels[element.type]}
-      </span>
+      <span className="text-xs text-muted-foreground">{labels[element.type]}</span>
       {element.content && (
-        <span className="text-sm truncate">{element.content}</span>
+        <span className="text-sm truncate max-w-[180px]">{element.content}</span>
       )}
     </div>
   );
 }
 
 /* ================================================================== */
-/*  Metadata sidebar card                                             */
+/*  Metadata panel                                                    */
 /* ================================================================== */
 
 function MetadataPanel({
-  frontMatter,
+  fm,
   onUpdate,
 }: {
-  frontMatter: ReportFrontMatter;
+  fm: ReportFrontMatter;
   onUpdate: (key: string, value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="rounded-lg border bg-card text-xs">
       <button
         type="button"
         className="flex items-center justify-between w-full px-3 py-2 text-left"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="text-xs font-medium">Metadados</span>
+        <span className="font-medium text-xs">Metadados</span>
         {open ? (
           <ChevronUp className="size-3.5 text-muted-foreground" />
         ) : (
           <ChevronDown className="size-3.5 text-muted-foreground" />
         )}
       </button>
-
-      {!open && frontMatter.titulo && (
+      {!open && fm.titulo && (
         <p className="text-[10px] text-muted-foreground px-3 pb-2 -mt-1 truncate">
-          {frontMatter.titulo}
+          {fm.titulo}
         </p>
       )}
-
       {open && (
         <div className="px-3 pb-3 space-y-2 border-t pt-2">
-          <Field label="Título" value={frontMatter.titulo ?? ""} onChange={(v) => onUpdate("titulo", v)} />
-          <Field label="Paciente ID" value={frontMatter.paciente_id ?? ""} onChange={(v) => onUpdate("paciente_id", v)} />
-          <Field label="Data" value={frontMatter.data ?? ""} onChange={(v) => onUpdate("data", v)} type="date" />
-          <Field label="Médico" value={frontMatter.medico ?? ""} onChange={(v) => onUpdate("medico", v)} />
+          <MiniField label="Título" value={fm.titulo ?? ""} onChange={(v) => onUpdate("titulo", v)} />
+          <MiniField label="Paciente ID" value={fm.paciente_id ?? ""} onChange={(v) => onUpdate("paciente_id", v)} />
+          <MiniField label="Data" value={fm.data ?? ""} onChange={(v) => onUpdate("data", v)} type="date" />
+          <MiniField label="Médico" value={fm.medico ?? ""} onChange={(v) => onUpdate("medico", v)} />
           <div className="space-y-1">
             <Label className="text-[10px]">Tipo</Label>
-            <Select
-              value={frontMatter.tipo ?? "consulta"}
-              onValueChange={(v) => onUpdate("tipo", v)}
-            >
+            <Select value={fm.tipo ?? "consulta"} onValueChange={(v) => onUpdate("tipo", v)}>
               <SelectTrigger className="h-7 text-[11px]">
                 <SelectValue />
               </SelectTrigger>
@@ -637,7 +697,7 @@ function MetadataPanel({
   );
 }
 
-function Field({
+function MiniField({
   label,
   value,
   onChange,
@@ -651,12 +711,7 @@ function Field({
   return (
     <div className="space-y-1">
       <Label className="text-[10px]">{label}</Label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-7 text-[11px]"
-      />
+      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="h-7 text-[11px]" />
     </div>
   );
 }
@@ -675,157 +730,106 @@ export function PageBuilder() {
     tipo: "consulta",
   });
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [overColumnId, setOverColumnId] = useState<string | null>(null);
+  const [overRowId, setOverRowId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  /* ---- lookups --------------------------------------------------- */
-
-  const elementToColumn = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const sec of layout.sections)
-      for (const row of sec.rows)
-        for (const col of row.columns)
-          for (const el of col.elements) map[el.id] = col.id;
-    return map;
-  }, [layout]);
-
-  const columnIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const sec of layout.sections)
-      for (const row of sec.rows)
-        for (const col of row.columns) set.add(col.id);
-    return set;
-  }, [layout]);
-
+  /* ---- all-elements map ------------------------------------------ */
   const allElements = useMemo(() => {
     const map: Record<string, LayoutElement> = {};
     for (const sec of layout.sections)
       for (const row of sec.rows)
-        for (const col of row.columns)
-          for (const el of col.elements) map[el.id] = el;
+        for (const el of row.elements) map[el.id] = el;
     return map;
   }, [layout]);
 
-  /* ---- resolve target column ------------------------------------- */
-
-  const resolveColumnId = useCallback(
-    (id: string): string | null => {
-      if (columnIds.has(id)) return id;
-      return elementToColumn[id] ?? null;
-    },
-    [columnIds, elementToColumn]
-  );
-
-  /* ---- DnD handlers ---------------------------------------------- */
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(String(event.active.id));
-  }, []);
-
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { over } = event;
-      if (!over) {
-        setOverColumnId(null);
-        return;
-      }
-      setOverColumnId(resolveColumnId(String(over.id)));
-    },
-    [resolveColumnId]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      setActiveId(null);
-      setOverColumnId(null);
-      if (!over) return;
-
-      const aId = String(active.id);
-      const oId = String(over.id);
-
-      /* palette → layout */
-      if (aId.startsWith("palette-")) {
-        const elType = active.data.current?.elementType as ElementType;
-        const targetCol = resolveColumnId(oId);
-        if (!targetCol) return;
-
-        const newEl = createElement(elType);
-        const afterEl = columnIds.has(oId) ? undefined : oId;
-        setLayout((prev) =>
-          addElementToColumn(prev, targetCol, newEl, afterEl)
-        );
-        return;
-      }
-
-      /* element move/reorder */
-      const sourceCol = elementToColumn[aId];
-      const targetCol = resolveColumnId(oId);
-      if (!sourceCol || !targetCol) return;
-
-      if (sourceCol === targetCol) {
-        /* same column → reorder */
-        if (aId !== oId) {
-          setLayout((prev) => reorderInColumn(prev, sourceCol, aId, oId));
-        }
-      } else {
-        /* different column → move */
-        setLayout((prev) => {
-          const { layout: withoutEl, element } = removeElement(prev, aId);
-          if (!element) return prev;
-          const afterEl = columnIds.has(oId) ? undefined : oId;
-          return addElementToColumn(withoutEl, targetCol, element, afterEl);
-        });
-      }
-    },
-    [elementToColumn, columnIds, resolveColumnId]
-  );
-
-  /* ---- layout mutations ------------------------------------------ */
-
-  const handleUpdateElement = useCallback(
-    (id: string, el: LayoutElement) => {
-      setLayout((prev) => updateElement(prev, id, el));
+  /* ---- resolve zone → row id ------------------------------------- */
+  const resolveRowId = useCallback(
+    (overId: string): string | null => {
+      if (overId.startsWith("zone_")) return overId.slice(5);
+      return null;
     },
     []
   );
 
+  /* ---- DnD handlers ---------------------------------------------- */
+  const handleDragStart = useCallback((e: DragStartEvent) => {
+    setActiveId(String(e.active.id));
+  }, []);
+
+  const handleDragOver = useCallback(
+    (e: DragOverEvent) => {
+      if (!e.over) {
+        setOverRowId(null);
+        return;
+      }
+      const rid = resolveRowId(String(e.over.id));
+      setOverRowId(rid);
+    },
+    [resolveRowId]
+  );
+
+  const handleDragEnd = useCallback(
+    (e: DragEndEvent) => {
+      setActiveId(null);
+      setOverRowId(null);
+      if (!e.over) return;
+
+      const aId = String(e.active.id);
+      const oId = String(e.over.id);
+      const targetRowId = resolveRowId(oId);
+      if (!targetRowId) return;
+
+      if (aId.startsWith("palette-")) {
+        const elType = e.active.data.current?.elementType as ElementType;
+        const newEl = createElement(elType);
+        setLayout((prev) => addElementToRow(prev, targetRowId, newEl));
+      } else {
+        setLayout((prev) => moveElementToRow(prev, aId, targetRowId));
+      }
+    },
+    [resolveRowId]
+  );
+
+  /* ---- layout actions -------------------------------------------- */
+  const handleUpdateElement = useCallback((id: string, el: LayoutElement) => {
+    setLayout((prev) => updateElement(prev, id, el));
+  }, []);
+
   const handleDeleteElement = useCallback((id: string) => {
     setLayout((prev) => removeElement(prev, id).layout);
+  }, []);
+
+  const handleResizeElement = useCallback((id: string, span: ElementSpan) => {
+    setLayout((prev) => resizeElement(prev, id, span));
+  }, []);
+
+  const handleMoveElement = useCallback((id: string, dir: "left" | "right") => {
+    setLayout((prev) => moveElementInRow(prev, id, dir));
   }, []);
 
   const handleDeleteRow = useCallback((rowId: string) => {
     setLayout((prev) => removeRow(prev, rowId));
   }, []);
 
-  const handleAddRow = useCallback(
-    (sectionType: SectionType, spans: number[]) => {
-      setLayout((prev) => addRowToSection(prev, sectionType, createRow(spans)));
-    },
-    []
-  );
+  const handleAddRow = useCallback((sectionType: SectionType) => {
+    setLayout((prev) => addRow(prev, sectionType));
+  }, []);
 
   const handleUpdateFM = useCallback((key: string, value: string) => {
     setFrontMatter((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   /* ---- export ---------------------------------------------------- */
-
   const markdown = useMemo(
     () => layoutToMarkdown(frontMatter, layout),
     [frontMatter, layout]
   );
 
   const handleExport = useCallback(() => {
-    const blob = new Blob([markdown], {
-      type: "text/markdown;charset=utf-8",
-    });
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -834,15 +838,13 @@ export function PageBuilder() {
     URL.revokeObjectURL(url);
   }, [markdown, frontMatter.data]);
 
-  /* ---- active item for overlay ----------------------------------- */
-
+  /* ---- active overlay info --------------------------------------- */
   const activePaletteType = activeId?.startsWith("palette-")
     ? (activeId.replace("palette-", "") as ElementType)
     : null;
   const activeElement = activeId ? allElements[activeId] ?? null : null;
 
   /* ---- render ---------------------------------------------------- */
-
   return (
     <DndContext
       sensors={sensors}
@@ -854,9 +856,7 @@ export function PageBuilder() {
       <div className="flex flex-col min-h-screen bg-muted/50">
         {/* header */}
         <header className="flex items-center justify-between border-b bg-background/95 backdrop-blur-sm px-4 py-2.5 shrink-0">
-          <h1 className="text-base font-medium tracking-tight">
-            PDF Generator
-          </h1>
+          <h1 className="text-base font-medium tracking-tight">PDF Generator</h1>
           <Button onClick={handleExport} size="sm" variant="outline">
             <Download className="size-4 mr-2" />
             Exportar .md
@@ -864,63 +864,27 @@ export function PageBuilder() {
         </header>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* ---- left sidebar ---- */}
-          <aside className="w-[200px] shrink-0 border-r bg-background overflow-y-auto p-3 space-y-4">
-            {/* palette */}
+          {/* ---- sidebar ---- */}
+          <aside className="w-[190px] shrink-0 border-r bg-background overflow-y-auto p-3 space-y-5">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
                 Elementos
               </p>
               <div className="space-y-1.5">
                 {PALETTE.map(({ type, label, Icon }) => (
-                  <PaletteItem
-                    key={type}
-                    type={type}
-                    label={label}
-                    Icon={Icon}
-                  />
+                  <PaletteItem key={type} type={type} label={label} Icon={Icon} />
                 ))}
               </div>
             </div>
 
-            {/* row presets */}
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                <Columns3 className="size-3 inline mr-1 -mt-0.5" />
-                Layouts de linha
-              </p>
-              <div className="space-y-1">
-                {ROW_PRESETS.map((preset) => (
-                  <div
-                    key={preset.label}
-                    className="flex items-center gap-2 text-[11px] text-muted-foreground"
-                  >
-                    <ColumnPreview spans={preset.spans} />
-                    <span>{preset.label}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[9px] text-muted-foreground/50 mt-1.5">
-                Use o botão <span className="font-medium">+ linha</span> em
-                cada seção
-              </p>
-            </div>
-
-            {/* metadata */}
-            <MetadataPanel
-              frontMatter={frontMatter}
-              onUpdate={handleUpdateFM}
-            />
+            <MetadataPanel fm={frontMatter} onUpdate={handleUpdateFM} />
           </aside>
 
-          {/* ---- page canvas ---- */}
+          {/* ---- canvas ---- */}
           <main className="flex-1 overflow-y-auto p-6">
             <div
               className="mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-8"
-              style={{
-                width: "210mm",
-                minHeight: "297mm",
-              }}
+              style={{ width: "210mm", minHeight: "297mm" }}
             >
               {layout.sections.map((section) => (
                 <SectionComponent
@@ -928,9 +892,11 @@ export function PageBuilder() {
                   section={section}
                   onUpdateElement={handleUpdateElement}
                   onDeleteElement={handleDeleteElement}
+                  onResizeElement={handleResizeElement}
+                  onMoveElement={handleMoveElement}
                   onDeleteRow={handleDeleteRow}
-                  onAddRow={(spans) => handleAddRow(section.type, spans)}
-                  overColumnId={overColumnId}
+                  onAddRow={() => handleAddRow(section.type)}
+                  activeOverRowId={overRowId}
                 />
               ))}
             </div>
