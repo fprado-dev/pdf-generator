@@ -127,3 +127,14 @@
     min-height: 100%;
   }
 }
+
+/* ---- PDF export mode: hide all editing chrome ---- */
+.export-mode [data-edit-chrome] {
+  display: none !important;
+}
+.export-mode .border-dashed {
+  border-color: transparent !important;
+}
+.export-mode .group\/row {
+  border-color: transparent !important;
+}

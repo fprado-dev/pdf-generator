@@ -42,6 +42,8 @@ import {
   reorderInColumn,
   moveElementToColumn,
 } from "@/lib/layout-utils";
+import { exportToPDF } from "@/lib/export-pdf";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Heading1,
@@ -58,6 +60,7 @@ import {
   Columns3,
   Columns4,
   Square,
+  Download,
 } from "lucide-react";
 
 const IMG_ACCEPT = [
@@ -201,7 +204,7 @@ function SortableElement({
       )}
     >
       {/* toolbar */}
-      <div className="absolute -top-2.5 right-1 flex items-center gap-0.5 bg-white rounded-full border shadow-sm px-1 py-0.5 opacity-0 group-hover/el:opacity-100 transition-opacity z-10">
+      <div data-edit-chrome className="absolute -top-2.5 right-1 flex items-center gap-0.5 bg-white rounded-full border shadow-sm px-1 py-0.5 opacity-0 group-hover/el:opacity-100 transition-opacity z-10">
         <button
           type="button"
           className="p-0.5 rounded cursor-grab active:cursor-grabbing hover:bg-muted touch-none"
@@ -433,6 +436,7 @@ function ColumnDropZone({
 
       {/* click-to-add zone */}
       <div
+        data-edit-chrome
         className={cn(
           "flex items-center justify-center rounded-md mx-1.5 mb-1.5 transition-all cursor-pointer",
           empty ? "flex-1 min-h-[40px]" : "min-h-[24px]",
@@ -508,7 +512,7 @@ function RowComponent({
   return (
     <div className="group/row relative rounded-xl border border-border/30 bg-white p-2 transition-all hover:border-border/60">
       {/* row toolbar */}
-      <div className="flex items-center justify-between mb-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+      <div data-edit-chrome className="flex items-center justify-between mb-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
         <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg px-1 py-0.5">
           {COL_OPTIONS.map(({ count, Icon, label }) => (
             <button
@@ -603,6 +607,8 @@ export function PageBuilder() {
   const [layout, setLayout] = useState<PageLayout>(createEmptyLayout());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColId, setOverColId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } })
@@ -704,6 +710,18 @@ export function PageBuilder() {
     []
   );
 
+  /* ---- export ----------------------------------------------------- */
+
+  const handleExportPDF = useCallback(async () => {
+    if (!canvasRef.current || exporting) return;
+    setExporting(true);
+    try {
+      await exportToPDF(canvasRef.current, "relatorio.pdf");
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
+
   /* ---- overlay --------------------------------------------------- */
 
   const activePaletteType = activeId?.startsWith("palette-")
@@ -727,6 +745,15 @@ export function PageBuilder() {
           <h1 className="text-base font-medium tracking-tight">
             PDF Generator
           </h1>
+          <Button
+            onClick={handleExportPDF}
+            size="sm"
+            variant="outline"
+            disabled={exporting || layout.rows.length === 0}
+          >
+            <Download className="size-4 mr-2" />
+            {exporting ? "Gerando..." : "Exportar PDF"}
+          </Button>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
@@ -752,11 +779,12 @@ export function PageBuilder() {
           {/* canvas */}
           <main className="flex-1 overflow-y-auto p-6">
             <div
+              ref={canvasRef}
               className="mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-6 space-y-3"
               style={{ width: "210mm", minHeight: "297mm" }}
             >
               {layout.rows.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/40">
+                <div data-edit-chrome className="flex flex-col items-center justify-center py-24 text-muted-foreground/40">
                   <p className="text-sm mb-4">
                     Adicione uma linha para começar
                   </p>
@@ -786,6 +814,7 @@ export function PageBuilder() {
 
               {layout.rows.length > 0 && (
                 <button
+                  data-edit-chrome
                   type="button"
                   onClick={handleAddRow}
                   className="w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/15 py-3 text-[11px] text-muted-foreground/40 hover:border-primary/30 hover:text-primary/60 transition-colors"
