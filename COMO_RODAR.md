@@ -1,5 +1,7 @@
 # Como ver o aplicativo
 
+> **No Cursor Agents (cursor.com/agents)?** A porta 3000 não fica acessível. Veja **[CURSOR_AGENTS.md](CURSOR_AGENTS.md)** para fazer deploy na Vercel e obter um link público.
+
 ## Passo 1: Abrir o terminal
 
 No Cursor, abra um terminal integrado (`` Ctrl+` `` ou **Terminal → New Terminal**).

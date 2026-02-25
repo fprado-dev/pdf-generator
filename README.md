@@ -2,6 +2,8 @@
 
 Sistema full-custom para gerar estruturas em arquivos `.md` para relatórios médicos pediátricos.
 
+> **Cursor Agents (cursor.com/agents):** A porta 3000 não é exposta. Use o deploy na Vercel — veja [CURSOR_AGENTS.md](CURSOR_AGENTS.md).
+
 ## Stack
 
 - **Next.js 16** + TypeScript
