@@ -128,13 +128,36 @@
   }
 }
 
-/* ---- PDF export mode: hide all editing chrome ---- */
+/* ---- PDF export mode: hide editing chrome, clean layout ---- */
 .export-mode [data-edit-chrome] {
   display: none !important;
 }
 .export-mode .border-dashed {
-  border-color: transparent !important;
+  border: none !important;
 }
 .export-mode .group\/row {
-  border-color: transparent !important;
+  border: none !important;
+  padding: 4px 0 !important;
+}
+.export-mode input,
+.export-mode textarea {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  resize: none !important;
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+.export-mode hr {
+  margin: 8px 0 !important;
+}
+.export-mode table {
+  border-collapse: collapse !important;
+}
+.export-mode table input {
+  text-align: inherit !important;
 }

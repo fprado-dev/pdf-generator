@@ -511,9 +511,10 @@ function RowComponent({
 }) {
   return (
     <div className="group/row relative rounded-xl border border-border/30 bg-white p-2 transition-all hover:border-border/60">
-      {/* row toolbar */}
-      <div data-edit-chrome className="flex items-center justify-between mb-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
-        <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg px-1 py-0.5">
+      {/* row toolbar — always visible */}
+      <div data-edit-chrome className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] text-muted-foreground/50 mr-1">Colunas:</span>
           {COL_OPTIONS.map(({ count, Icon, label }) => (
             <button
               key={count}
@@ -523,7 +524,7 @@ function RowComponent({
                 "p-1 rounded transition-colors",
                 row.columnCount === count
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted"
+                  : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted"
               )}
               title={label}
             >
@@ -535,10 +536,10 @@ function RowComponent({
         <button
           type="button"
           onClick={onDeleteRow}
-          className="p-1 rounded hover:bg-destructive/10 transition-colors"
+          className="p-1 rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
           title="Remover linha"
         >
-          <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
+          <Trash2 className="size-3.5" />
         </button>
       </div>
 
