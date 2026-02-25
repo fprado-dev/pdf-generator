@@ -423,10 +423,11 @@ function ColumnDropZone({
       style={{ gridColumn: `span ${column.span}` }}
       className={cn(
         "rounded-lg border-2 border-dashed min-h-[52px] transition-all",
-        empty && !lit && "border-emerald-200/70 bg-emerald-50/50",
-        empty && lit && "border-emerald-400 bg-emerald-100/80 shadow-inner",
-        !empty && !lit && "border-transparent bg-transparent",
-        !empty && lit && "border-emerald-400/50 bg-emerald-50/30"
+        lit
+          ? "border-emerald-400 bg-emerald-100/60 shadow-inner"
+          : empty
+            ? "border-emerald-200/70 bg-emerald-50/50"
+            : "border-emerald-100/50 bg-emerald-50/20"
       )}
     >
       <SortableContext
@@ -445,18 +446,27 @@ function ColumnDropZone({
         </div>
       </SortableContext>
 
-      {empty && (
-        <div className="flex items-center justify-center h-full min-h-[44px]">
-          <span
-            className={cn(
-              "text-[10px] select-none transition-colors",
-              lit ? "text-emerald-600 font-medium" : "text-emerald-300"
-            )}
-          >
-            {lit ? "↓ Soltar" : "+"}
-          </span>
-        </div>
-      )}
+      {/* always show a drop indicator */}
+      <div
+        className={cn(
+          "flex items-center justify-center transition-all rounded-md mx-1 mb-1",
+          empty ? "min-h-[44px]" : "min-h-[24px]",
+          lit
+            ? "bg-emerald-200/40"
+            : empty
+              ? ""
+              : "bg-emerald-50/60 opacity-0 hover:opacity-100"
+        )}
+      >
+        <span
+          className={cn(
+            "text-[10px] select-none transition-colors",
+            lit ? "text-emerald-600 font-medium" : "text-emerald-300"
+          )}
+        >
+          {lit ? "↓ Soltar" : "+"}
+        </span>
+      </div>
     </div>
   );
 }
