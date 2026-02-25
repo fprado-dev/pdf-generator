@@ -4,7 +4,7 @@
 
 ### Project overview
 
-PDF Generator — a client-side Next.js 16 (TypeScript, Tailwind CSS, shadcn/ui) page builder for pediatric medical reports in `.md` format. No backend, no database, no external APIs. Everything runs in the browser.
+PDF Generator — a client-side Next.js 16 (TypeScript, Tailwind CSS, shadcn/ui) page builder for pediatric medical reports. No backend, no database, no external APIs. Everything runs in the browser. PDF export is TBD; current focus is the React component layout structure.
 
 ### Running the app
 
@@ -18,7 +18,8 @@ See `README.md` and `COMO_RODAR.md` for detailed instructions.
 
 ### Key caveats
 
-- **No test framework** is installed. There are no automated tests to run. Validate changes with `npm run build` + `npm run lint` + manual browser testing.
-- **Port 3000 not exposed** in cloud agent VMs. Use `ngrok http 3000` to get a public URL (requires `NGROK_AUTHTOKEN` secret). The token is configured in `~/.config/ngrok/ngrok.yml`.
-- The app uses `@dnd-kit` for drag-and-drop. DnD state is complex — when modifying layout types or the page builder component, always verify drag-from-palette and within-editor drag both still work.
-- All source code is in Portuguese (comments, labels, variable names for domain objects).
+- **No test framework** is installed. No automated tests. Validate with `npm run build` + `npm run lint` + manual browser testing.
+- **Port 3000 not exposed** in cloud VMs. Use `ngrok http 3000` (requires `NGROK_AUTHTOKEN` secret). Config lives in `~/.config/ngrok/ngrok.yml`.
+- The app uses `@dnd-kit` for drag-and-drop. DnD via the `computerUse` subagent is unreliable — use the **click-to-add** fallback instead (click the green `+` zone in any column to open the element picker).
+- The row column toolbar (Full/2col/3col/4col) appears **on hover** over a row — the `computerUse` agent may have difficulty triggering it.
+- All source code labels and domain objects are in Portuguese.
