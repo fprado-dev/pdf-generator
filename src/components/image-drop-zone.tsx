@@ -134,11 +134,11 @@ export function ImageDropZone({
       onPaste={handlePaste}
     >
       {isDragging && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5">
-          <div className="flex flex-col items-center gap-2 text-primary">
-            <ImagePlus className="size-12" />
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl border border-dashed border-border bg-background/90 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+            <ImagePlus className="size-10" />
             <p className="text-sm font-medium">Solte as imagens aqui</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs">
               PNG, JPEG, GIF ou WebP
             </p>
           </div>

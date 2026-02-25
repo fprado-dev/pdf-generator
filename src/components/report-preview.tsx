@@ -22,11 +22,11 @@ export function ReportPreview({ frontMatter, content, className }: ReportPreview
 
   return (
     <Card className={className}>
-      <div className="min-h-[297mm] w-[210mm] bg-white p-8 shadow-lg print:shadow-none print:p-8" style={{ aspectRatio: "210/297" }}>
+      <div className="min-h-[297mm] w-[210mm] bg-white p-8 rounded-2xl print:shadow-none print:p-8" style={{ aspectRatio: "210/297" }}>
         {/* Cabeçalho - Front Matter */}
         {(frontMatter.titulo || frontMatter.medico || frontMatter.data) && (
           <>
-            <div className="mb-6 space-y-1 border-b pb-4">
+            <div className="mb-6 space-y-1 border-b border-border/60 pb-4">
               {frontMatter.titulo && (
                 <h1 className="text-xl font-bold text-gray-900">{frontMatter.titulo}</h1>
               )}
@@ -66,7 +66,7 @@ export function ReportPreview({ frontMatter, content, className }: ReportPreview
                 <div key={i} className={`flex ${positionClass}`}>
                   <div className={`${sizeClass} min-w-0`}>
                     <figure className="space-y-2">
-                      <div className="relative overflow-hidden rounded border border-gray-200 bg-gray-50 aspect-video">
+                      <div className="relative overflow-hidden rounded-xl border border-border/80 bg-muted/30 aspect-video">
                         {segment.image.src ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img

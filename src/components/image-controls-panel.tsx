@@ -72,7 +72,7 @@ function SortableImageItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-lg border p-3 space-y-3 ${isDragging ? "opacity-50 shadow-lg bg-background z-10" : ""}`}
+      className={`rounded-xl border border-border/80 p-3 space-y-3 bg-card ${isDragging ? "opacity-60 ring-2 ring-primary/10 z-10" : ""}`}
     >
       <div className="flex items-center gap-2">
         <button

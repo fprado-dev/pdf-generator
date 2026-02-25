@@ -77,11 +77,11 @@ export default function Home() {
   }, [markdown, parsed.frontMatter.data]);
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background px-4 py-3">
+    <div className="min-h-screen bg-muted/50">
+      <header className="border-b bg-background/95 backdrop-blur-sm px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">PDF Generator</h1>
-          <Button onClick={handleExportMd} size="sm">
+          <h1 className="text-lg font-medium tracking-tight">PDF Generator</h1>
+          <Button onClick={handleExportMd} size="sm" variant="outline">
             <Download className="size-4 mr-2" />
             Exportar .md
           </Button>
@@ -92,7 +92,7 @@ export default function Home() {
         <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
           <div className="space-y-4">
             <Tabs defaultValue="editor">
-              <TabsList>
+              <TabsList className="rounded-xl bg-muted/70 p-1">
                 <TabsTrigger value="editor">Editor</TabsTrigger>
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
