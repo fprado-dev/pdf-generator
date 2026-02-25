@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import {
   DndContext,
-  closestCenter,
+  pointerWithin,
   PointerSensor,
   useSensor,
   useSensors,
@@ -25,40 +25,23 @@ import type {
   LayoutElement,
   LayoutColumn,
   LayoutRow,
-  LayoutSection,
-  SectionType,
   PageLayout,
-  SpanSize,
+  ColumnCount,
 } from "@/lib/layout-types";
+import { createElement, createEmptyLayout } from "@/lib/layout-types";
 import {
-  createElement,
-  createDefaultLayout,
-  COLUMN_PRESETS,
-} from "@/lib/layout-types";
-import type { ReportFrontMatter } from "@/lib/types";
-import {
-  layoutToMarkdown,
   buildElementToColumn,
   buildAllElements,
   buildColumnIds,
+  addRow,
+  removeRow,
+  setRowColumns,
   addElementToColumn,
   removeElementById,
   updateElementById,
   reorderInColumn,
   moveElementToColumn,
-  addRowToSection,
-  removeRowById,
 } from "@/lib/layout-utils";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   Heading1,
@@ -67,15 +50,14 @@ import {
   ImageIcon,
   Minus,
   Table,
-  Download,
   Trash2,
   ImagePlus,
-  ChevronDown,
-  ChevronUp,
   GripVertical,
-  X,
-  Rows3,
+  Plus,
+  Columns2,
   Columns3,
+  Columns4,
+  Square,
 } from "lucide-react";
 
 const IMG_ACCEPT = [
@@ -87,7 +69,7 @@ const IMG_ACCEPT = [
 ];
 
 /* ================================================================== */
-/*  Palette items                                                     */
+/*  Palette                                                           */
 /* ================================================================== */
 
 const PALETTE = [
@@ -132,7 +114,7 @@ function PaletteItem({
 }
 
 /* ================================================================== */
-/*  Sortable element (within a column)                                */
+/*  Sortable element                                                  */
 /* ================================================================== */
 
 function SortableElement({
@@ -215,10 +197,10 @@ function SortableElement({
       className={cn(
         "group/el relative rounded-md border border-transparent p-1.5 transition-all",
         "hover:border-border/50 hover:bg-white",
-        isDragging && "opacity-30 ring-2 ring-primary/30 z-10"
+        isDragging && "opacity-30 ring-2 ring-primary/20 z-10"
       )}
     >
-      {/* top toolbar */}
+      {/* toolbar */}
       <div className="absolute -top-2.5 right-1 flex items-center gap-0.5 bg-white rounded-full border shadow-sm px-1 py-0.5 opacity-0 group-hover/el:opacity-100 transition-opacity z-10">
         <button
           type="button"
@@ -237,7 +219,8 @@ function SortableElement({
         </button>
       </div>
 
-      {/* content by type */}
+      {/* ---- content by type ---- */}
+
       {element.type === "titulo" && (
         <input
           value={element.content}
@@ -273,7 +256,7 @@ function SortableElement({
       {element.type === "imagem" && (
         <div className="space-y-1">
           {element.imageParams?.src ? (
-            <div className="relative rounded overflow-hidden bg-muted/20 border border-border/40">
+            <div className="rounded overflow-hidden bg-muted/20 border border-border/40">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={element.imageParams.src}
@@ -395,7 +378,7 @@ function SortableElement({
 }
 
 /* ================================================================== */
-/*  Green column drop zone                                            */
+/*  Column drop zone                                                  */
 /* ================================================================== */
 
 function ColumnDropZone({
@@ -420,21 +403,21 @@ function ColumnDropZone({
   return (
     <div
       ref={setNodeRef}
-      style={{ gridColumn: `span ${column.span}` }}
       className={cn(
-        "rounded-lg border-2 border-dashed min-h-[52px] transition-all",
+        "rounded-lg border-2 border-dashed min-h-[56px] flex flex-col transition-all",
         lit
-          ? "border-emerald-400 bg-emerald-100/60 shadow-inner"
+          ? "border-emerald-400 bg-emerald-100/60"
           : empty
-            ? "border-emerald-200/70 bg-emerald-50/50"
-            : "border-emerald-100/50 bg-emerald-50/20"
+            ? "border-emerald-200/60 bg-emerald-50/40"
+            : "border-emerald-100/40 bg-emerald-50/10"
       )}
     >
+      {/* elements */}
       <SortableContext
         items={column.elements.map((e) => e.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="p-1 space-y-0.5">
+        <div className="flex-1 p-1.5 space-y-0.5">
           {column.elements.map((el) => (
             <SortableElement
               key={el.id}
@@ -446,25 +429,21 @@ function ColumnDropZone({
         </div>
       </SortableContext>
 
-      {/* always show a drop indicator */}
+      {/* drop indicator */}
       <div
         className={cn(
-          "flex items-center justify-center transition-all rounded-md mx-1 mb-1",
-          empty ? "min-h-[44px]" : "min-h-[24px]",
-          lit
-            ? "bg-emerald-200/40"
-            : empty
-              ? ""
-              : "bg-emerald-50/60 opacity-0 hover:opacity-100"
+          "flex items-center justify-center rounded-md mx-1.5 mb-1.5 transition-all",
+          empty ? "flex-1 min-h-[40px]" : "min-h-[20px]",
+          lit && "bg-emerald-200/50"
         )}
       >
         <span
           className={cn(
-            "text-[10px] select-none transition-colors",
-            lit ? "text-emerald-600 font-medium" : "text-emerald-300"
+            "text-[10px] select-none",
+            lit ? "text-emerald-600 font-medium" : "text-emerald-300/80"
           )}
         >
-          {lit ? "↓ Soltar" : "+"}
+          {lit ? "↓ Soltar aqui" : "+"}
         </span>
       </div>
     </div>
@@ -472,27 +451,69 @@ function ColumnDropZone({
 }
 
 /* ================================================================== */
-/*  Row                                                               */
+/*  Row with column selector                                          */
 /* ================================================================== */
+
+const COL_OPTIONS: { count: ColumnCount; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
+  { count: 1, Icon: Square, label: "Full" },
+  { count: 2, Icon: Columns2, label: "2 col" },
+  { count: 3, Icon: Columns3, label: "3 col" },
+  { count: 4, Icon: Columns4, label: "4 col" },
+];
 
 function RowComponent({
   row,
   onUpdateElement,
   onDeleteElement,
   onDeleteRow,
-  canDelete,
+  onSetColumns,
   overColumnId,
 }: {
   row: LayoutRow;
   onUpdateElement: (id: string, el: LayoutElement) => void;
   onDeleteElement: (id: string) => void;
   onDeleteRow: () => void;
-  canDelete: boolean;
+  onSetColumns: (count: ColumnCount) => void;
   overColumnId: string | null;
 }) {
   return (
-    <div className="group/row relative">
-      <div className="grid grid-cols-4 gap-2 p-1">
+    <div className="group/row relative rounded-xl border border-border/30 bg-white p-2 transition-all hover:border-border/60">
+      {/* row toolbar */}
+      <div className="flex items-center justify-between mb-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg px-1 py-0.5">
+          {COL_OPTIONS.map(({ count, Icon, label }) => (
+            <button
+              key={count}
+              type="button"
+              onClick={() => onSetColumns(count)}
+              className={cn(
+                "p-1 rounded transition-colors",
+                row.columnCount === count
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              )}
+              title={label}
+            >
+              <Icon className="size-3.5" />
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={onDeleteRow}
+          className="p-1 rounded hover:bg-destructive/10 transition-colors"
+          title="Remover linha"
+        >
+          <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
+        </button>
+      </div>
+
+      {/* columns grid */}
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: `repeat(${row.columnCount}, 1fr)` }}
+      >
         {row.columns.map((col) => (
           <ColumnDropZone
             key={col.id}
@@ -503,165 +524,12 @@ function RowComponent({
           />
         ))}
       </div>
-
-      {canDelete && (
-        <button
-          type="button"
-          onClick={onDeleteRow}
-          className="absolute -right-5 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 group-hover/row:opacity-100 hover:bg-destructive/10 transition-opacity"
-          title="Remover linha"
-        >
-          <X className="size-3 text-muted-foreground hover:text-destructive" />
-        </button>
-      )}
     </div>
   );
 }
 
 /* ================================================================== */
-/*  Section                                                           */
-/* ================================================================== */
-
-const SEC_COLORS: Record<
-  SectionType,
-  { border: string; label: string; bg: string }
-> = {
-  topo: {
-    border: "border-blue-200/60",
-    label: "text-blue-400",
-    bg: "bg-blue-50/20",
-  },
-  corpo: {
-    border: "border-gray-200/60",
-    label: "text-gray-400",
-    bg: "bg-transparent",
-  },
-  rodape: {
-    border: "border-stone-200/60",
-    label: "text-stone-400",
-    bg: "bg-stone-50/20",
-  },
-};
-
-function ColumnPreviewIcon({ spans }: { spans: number[] }) {
-  return (
-    <div className="flex gap-0.5 h-3.5">
-      {spans.map((s, i) => (
-        <div
-          key={i}
-          className="bg-muted-foreground/25 rounded-[2px]"
-          style={{ width: `${(s / 4) * 36}px`, height: "100%" }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function SectionComponent({
-  section,
-  onUpdateElement,
-  onDeleteElement,
-  onDeleteRow,
-  onAddLine,
-  onAddColumns,
-  overColumnId,
-}: {
-  section: LayoutSection;
-  onUpdateElement: (id: string, el: LayoutElement) => void;
-  onDeleteElement: (id: string) => void;
-  onDeleteRow: (rowId: string) => void;
-  onAddLine: () => void;
-  onAddColumns: (spans: SpanSize[]) => void;
-  overColumnId: string | null;
-}) {
-  const [colPickerOpen, setColPickerOpen] = useState(false);
-  const colors = SEC_COLORS[section.type];
-
-  return (
-    <div
-      className={cn(
-        "rounded-xl border-2 border-dashed mb-4 relative",
-        colors.border,
-        colors.bg
-      )}
-    >
-      <div
-        className={cn(
-          "absolute -top-2.5 left-3 px-2 text-[9px] font-bold uppercase tracking-widest bg-white rounded",
-          colors.label
-        )}
-      >
-        {section.label}
-      </div>
-
-      <div className="pt-4 pb-2 px-2 space-y-1">
-        {section.rows.map((row) => (
-          <RowComponent
-            key={row.id}
-            row={row}
-            onUpdateElement={onUpdateElement}
-            onDeleteElement={onDeleteElement}
-            onDeleteRow={() => onDeleteRow(row.id)}
-            canDelete={section.rows.length > 1}
-            overColumnId={overColumnId}
-          />
-        ))}
-
-        {/* + Linha / + Coluna buttons */}
-        <div className="flex justify-center items-center gap-3 py-1.5">
-          <button
-            type="button"
-            onClick={onAddLine}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          >
-            <Rows3 className="size-3" />
-            <span>Linha</span>
-          </button>
-
-          <span className="text-muted-foreground/20 text-[10px]">|</span>
-
-          {!colPickerOpen ? (
-            <button
-              type="button"
-              onClick={() => setColPickerOpen(true)}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <Columns3 className="size-3" />
-              <span>Colunas</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-1 bg-card border border-border rounded-lg px-2 py-1 shadow-sm">
-              {COLUMN_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    onAddColumns(preset.spans);
-                    setColPickerOpen(false);
-                  }}
-                  className="rounded px-1.5 py-1 hover:bg-accent transition-colors"
-                  title={preset.label}
-                >
-                  <ColumnPreviewIcon spans={preset.spans} />
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setColPickerOpen(false)}
-                className="ml-1 p-0.5 rounded hover:bg-muted"
-              >
-                <X className="size-3 text-muted-foreground" />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ================================================================== */
-/*  Drag overlay                                                      */
+/*  Drag overlays                                                     */
 /* ================================================================== */
 
 function PaletteOverlay({ type }: { type: ElementType }) {
@@ -687,7 +555,9 @@ function ElementOverlay({ element }: { element: LayoutElement }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-primary/50 bg-card px-3 py-2 shadow-lg max-w-[220px]">
       <GripVertical className="size-3.5 text-muted-foreground" />
-      <span className="text-xs text-muted-foreground">{labels[element.type]}</span>
+      <span className="text-xs text-muted-foreground">
+        {labels[element.type]}
+      </span>
       {element.content && (
         <span className="text-sm truncate">{element.content}</span>
       )}
@@ -696,108 +566,17 @@ function ElementOverlay({ element }: { element: LayoutElement }) {
 }
 
 /* ================================================================== */
-/*  Metadata                                                          */
-/* ================================================================== */
-
-function MetadataPanel({
-  fm,
-  onUpdate,
-}: {
-  fm: ReportFrontMatter;
-  onUpdate: (key: string, value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="rounded-lg border bg-card text-xs">
-      <button
-        type="button"
-        className="flex items-center justify-between w-full px-3 py-2 text-left"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="font-medium text-xs">Metadados</span>
-        {open ? (
-          <ChevronUp className="size-3.5 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="size-3.5 text-muted-foreground" />
-        )}
-      </button>
-      {!open && fm.titulo && (
-        <p className="text-[10px] text-muted-foreground px-3 pb-2 -mt-1 truncate">
-          {fm.titulo}
-        </p>
-      )}
-      {open && (
-        <div className="px-3 pb-3 space-y-2 border-t pt-2">
-          <MiniField label="Título" value={fm.titulo ?? ""} onChange={(v) => onUpdate("titulo", v)} />
-          <MiniField label="Paciente ID" value={fm.paciente_id ?? ""} onChange={(v) => onUpdate("paciente_id", v)} />
-          <MiniField label="Data" value={fm.data ?? ""} onChange={(v) => onUpdate("data", v)} type="date" />
-          <MiniField label="Médico" value={fm.medico ?? ""} onChange={(v) => onUpdate("medico", v)} />
-          <div className="space-y-1">
-            <Label className="text-[10px]">Tipo</Label>
-            <Select value={fm.tipo ?? "consulta"} onValueChange={(v) => onUpdate("tipo", v)}>
-              <SelectTrigger className="h-7 text-[11px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="consulta">Consulta</SelectItem>
-                <SelectItem value="retorno">Retorno</SelectItem>
-                <SelectItem value="emergencia">Emergência</SelectItem>
-                <SelectItem value="exame">Exame</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MiniField({
-  label,
-  value,
-  onChange,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-[10px]">{label}</Label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-7 text-[11px]"
-      />
-    </div>
-  );
-}
-
-/* ================================================================== */
-/*  Page Builder (main)                                               */
+/*  Page Builder                                                      */
 /* ================================================================== */
 
 export function PageBuilder() {
-  const [layout, setLayout] = useState<PageLayout>(createDefaultLayout());
-  const [frontMatter, setFrontMatter] = useState<ReportFrontMatter>({
-    titulo: "Relatório - Consulta Pediátrica",
-    paciente_id: "REF-2024-001",
-    data: "2024-02-25",
-    medico: "Dr(a). Nome do Médico",
-    tipo: "consulta",
-  });
+  const [layout, setLayout] = useState<PageLayout>(createEmptyLayout());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColId, setOverColId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
-
-  /* ---- derived lookups ------------------------------------------- */
 
   const elToCol = useMemo(() => buildElementToColumn(layout), [layout]);
   const allEls = useMemo(() => buildAllElements(layout), [layout]);
@@ -819,7 +598,11 @@ export function PageBuilder() {
 
   const handleDragOver = useCallback(
     (e: DragOverEvent) => {
-      setOverColId(e.over ? resolveColId(String(e.over.id)) : null);
+      if (!e.over) {
+        setOverColId(null);
+        return;
+      }
+      setOverColId(resolveColId(String(e.over.id)));
     },
     [resolveColId]
   );
@@ -833,7 +616,6 @@ export function PageBuilder() {
       const aId = String(e.active.id);
       const oId = String(e.over.id);
 
-      /* palette → column */
       if (aId.startsWith("palette-")) {
         const elType = e.active.data.current?.elementType as ElementType;
         const targetCol = resolveColId(oId);
@@ -844,15 +626,13 @@ export function PageBuilder() {
         return;
       }
 
-      /* element → reorder / move */
       const srcCol = elToCol[aId];
       const tgtCol = resolveColId(oId);
       if (!srcCol || !tgtCol) return;
 
       if (srcCol === tgtCol) {
-        if (aId !== oId) {
+        if (aId !== oId)
           setLayout((prev) => reorderInColumn(prev, srcCol, aId, oId));
-        }
       } else {
         setLayout((prev) => moveElementToColumn(prev, aId, tgtCol));
       }
@@ -862,6 +642,21 @@ export function PageBuilder() {
 
   /* ---- actions --------------------------------------------------- */
 
+  const handleAddRow = useCallback(() => {
+    setLayout((prev) => addRow(prev));
+  }, []);
+
+  const handleDeleteRow = useCallback((rowId: string) => {
+    setLayout((prev) => removeRow(prev, rowId));
+  }, []);
+
+  const handleSetColumns = useCallback(
+    (rowId: string, count: ColumnCount) => {
+      setLayout((prev) => setRowColumns(prev, rowId, count));
+    },
+    []
+  );
+
   const handleUpdateElement = useCallback((id: string, el: LayoutElement) => {
     setLayout((prev) => updateElementById(prev, id, el));
   }, []);
@@ -869,42 +664,6 @@ export function PageBuilder() {
   const handleDeleteElement = useCallback((id: string) => {
     setLayout((prev) => removeElementById(prev, id).layout);
   }, []);
-
-  const handleDeleteRow = useCallback((rowId: string) => {
-    setLayout((prev) => removeRowById(prev, rowId));
-  }, []);
-
-  const handleAddLine = useCallback((sec: SectionType) => {
-    setLayout((prev) => addRowToSection(prev, sec, [4]));
-  }, []);
-
-  const handleAddColumns = useCallback(
-    (sec: SectionType, spans: SpanSize[]) => {
-      setLayout((prev) => addRowToSection(prev, sec, spans));
-    },
-    []
-  );
-
-  const handleUpdateFM = useCallback((key: string, value: string) => {
-    setFrontMatter((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  /* ---- export ---------------------------------------------------- */
-
-  const markdown = useMemo(
-    () => layoutToMarkdown(frontMatter, layout),
-    [frontMatter, layout]
-  );
-
-  const handleExport = useCallback(() => {
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-${frontMatter.data ?? "sem-data"}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [markdown, frontMatter.data]);
 
   /* ---- overlay --------------------------------------------------- */
 
@@ -918,7 +677,7 @@ export function PageBuilder() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -929,15 +688,11 @@ export function PageBuilder() {
           <h1 className="text-base font-medium tracking-tight">
             PDF Generator
           </h1>
-          <Button onClick={handleExport} size="sm" variant="outline">
-            <Download className="size-4 mr-2" />
-            Exportar .md
-          </Button>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
           {/* sidebar */}
-          <aside className="w-[190px] shrink-0 border-r bg-background overflow-y-auto p-3 space-y-5">
+          <aside className="w-[190px] shrink-0 border-r bg-background overflow-y-auto p-3 space-y-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
                 Elementos
@@ -953,30 +708,52 @@ export function PageBuilder() {
                 ))}
               </div>
             </div>
-
-            <MetadataPanel fm={frontMatter} onUpdate={handleUpdateFM} />
           </aside>
 
           {/* canvas */}
           <main className="flex-1 overflow-y-auto p-6">
             <div
-              className="mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-8"
+              className="mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-6 space-y-3"
               style={{ width: "210mm", minHeight: "297mm" }}
             >
-              {layout.sections.map((section) => (
-                <SectionComponent
-                  key={section.type}
-                  section={section}
+              {layout.rows.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/40">
+                  <p className="text-sm mb-4">
+                    Adicione uma linha para começar
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAddRow}
+                    className="flex items-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/20 px-6 py-3 text-sm hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <Plus className="size-4" />
+                    Adicionar linha
+                  </button>
+                </div>
+              )}
+
+              {layout.rows.map((row) => (
+                <RowComponent
+                  key={row.id}
+                  row={row}
                   onUpdateElement={handleUpdateElement}
                   onDeleteElement={handleDeleteElement}
-                  onDeleteRow={handleDeleteRow}
-                  onAddLine={() => handleAddLine(section.type)}
-                  onAddColumns={(spans) =>
-                    handleAddColumns(section.type, spans)
-                  }
+                  onDeleteRow={() => handleDeleteRow(row.id)}
+                  onSetColumns={(count) => handleSetColumns(row.id, count)}
                   overColumnId={overColId}
                 />
               ))}
+
+              {layout.rows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/15 py-3 text-[11px] text-muted-foreground/40 hover:border-primary/30 hover:text-primary/60 transition-colors"
+                >
+                  <Plus className="size-3.5" />
+                  Adicionar linha
+                </button>
+              )}
             </div>
           </main>
         </div>

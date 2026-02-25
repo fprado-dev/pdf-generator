@@ -8,7 +8,7 @@ export type ElementType =
   | "separador"
   | "tabela";
 
-export type SpanSize = 1 | 2 | 3 | 4;
+export type ColumnCount = 1 | 2 | 3 | 4;
 
 export interface LayoutElement {
   id: string;
@@ -20,28 +20,20 @@ export interface LayoutElement {
 
 export interface LayoutColumn {
   id: string;
-  span: SpanSize;
   elements: LayoutElement[];
 }
 
 export interface LayoutRow {
   id: string;
+  columnCount: ColumnCount;
   columns: LayoutColumn[];
 }
 
-export type SectionType = "topo" | "corpo" | "rodape";
-
-export interface LayoutSection {
-  type: SectionType;
-  label: string;
+export interface PageLayout {
   rows: LayoutRow[];
 }
 
-export interface PageLayout {
-  sections: LayoutSection[];
-}
-
-/* ---- id helper --------------------------------------------------- */
+/* ---- helpers ----------------------------------------------------- */
 
 let _seq = 0;
 function uid(): string {
@@ -76,38 +68,18 @@ export function createElement(type: ElementType): LayoutElement {
   return base;
 }
 
-export function createColumn(span: SpanSize): LayoutColumn {
-  return { id: createId("col"), span, elements: [] };
+function createColumn(): LayoutColumn {
+  return { id: createId("col"), elements: [] };
 }
 
-export function createRow(spans: SpanSize[]): LayoutRow {
+export function createRow(colCount: ColumnCount = 1): LayoutRow {
   return {
     id: createId("row"),
-    columns: spans.map((s) => createColumn(s)),
+    columnCount: colCount,
+    columns: Array.from({ length: colCount }, () => createColumn()),
   };
 }
 
-export function createDefaultLayout(): PageLayout {
-  return {
-    sections: [
-      { type: "topo", label: "Topo", rows: [createRow([4])] },
-      { type: "corpo", label: "Corpo", rows: [createRow([4])] },
-      { type: "rodape", label: "Rodapé", rows: [createRow([4])] },
-    ],
-  };
+export function createEmptyLayout(): PageLayout {
+  return { rows: [] };
 }
-
-/* ---- column presets ---------------------------------------------- */
-
-export interface ColumnPreset {
-  label: string;
-  spans: SpanSize[];
-}
-
-export const COLUMN_PRESETS: ColumnPreset[] = [
-  { label: "2 colunas", spans: [2, 2] },
-  { label: "⅓ + ⅔", spans: [1, 3] },
-  { label: "⅔ + ⅓", spans: [3, 1] },
-  { label: "3 colunas", spans: [1, 1, 2] },
-  { label: "4 colunas", spans: [1, 1, 1, 1] },
-];
