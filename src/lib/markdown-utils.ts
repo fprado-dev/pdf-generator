@@ -73,3 +73,25 @@ export function reorderImages(
 
   return result;
 }
+
+/**
+ * Insere um novo bloco de imagem no markdown
+ * @param insertBefore - Se fornecido, insere antes da primeira ocorrência. Senão, anexa ao final.
+ */
+export function insertImageBlock(
+  markdown: string,
+  imageParams: ImageBlockParams,
+  insertBefore?: string
+): string {
+  const block = generateImageBlock(imageParams).trim();
+  const trimmed = markdown.trimEnd();
+
+  if (insertBefore) {
+    const idx = trimmed.indexOf(insertBefore);
+    if (idx !== -1) {
+      return trimmed.slice(0, idx) + block + "\n\n" + trimmed.slice(idx);
+    }
+  }
+
+  return trimmed + "\n\n" + block;
+}

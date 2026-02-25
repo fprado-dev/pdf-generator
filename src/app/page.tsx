@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { parseMarkdown, extractImageBlocks } from "@/lib/parser";
 import { ReportPreview } from "@/components/report-preview";
 import { ImageControlsPanel } from "@/components/image-controls-panel";
+import { ImageDropZone } from "@/components/image-drop-zone";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -97,22 +98,31 @@ export default function Home() {
               </TabsList>
 
               <TabsContent value="editor" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <span className="text-sm font-medium flex items-center gap-2">
-                      <FileText className="size-4" />
-                      Markdown
-                    </span>
-                  </CardHeader>
-                  <CardContent>
-                    <Textarea
-                      value={markdown}
-                      onChange={(e) => setMarkdown(e.target.value)}
-                      placeholder="Digite ou cole seu relatório em Markdown..."
-                      className="min-h-[500px] font-mono text-sm"
-                    />
-                  </CardContent>
-                </Card>
+                <ImageDropZone
+                  markdown={markdown}
+                  onMarkdownChange={setMarkdown}
+                  className="min-h-[300px]"
+                >
+                  <Card>
+                    <CardHeader>
+                      <span className="text-sm font-medium flex items-center gap-2">
+                        <FileText className="size-4" />
+                        Markdown
+                      </span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Arraste imagens aqui ou cole (Ctrl+V) para adicionar
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <Textarea
+                        value={markdown}
+                        onChange={(e) => setMarkdown(e.target.value)}
+                        placeholder="Digite ou cole seu relatório em Markdown..."
+                        className="min-h-[500px] font-mono text-sm"
+                      />
+                    </CardContent>
+                  </Card>
+                </ImageDropZone>
               </TabsContent>
 
               <TabsContent value="preview" className="mt-4">
